@@ -1,71 +1,97 @@
 // src/components/LoginScreen.jsx
 import { useState } from 'react'
-import { Box, Button, VStack, Heading, Input, Text, useToast, Spinner } from '@chakra-ui/react'
-import { signInAnonymously } from "firebase/auth" // 👈 Import Sign In
-import { auth } from '../firebase' // 👈 Import the Auth Service
-import { logAction } from '../utils/logger'
+import { Box, Button, Input, VStack, Heading, Text, useToast, Container, FormControl, FormLabel, Spinner } from '@chakra-ui/react'
+import { signInWithEmailAndPassword } from 'firebase/auth'
+import { auth } from '../firebase'
 
 export default function LoginScreen({ onLogin }) {
-  const [pin, setPin] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const toast = useToast()
 
-  const handleLogin = async () => {
-    setLoading(true)
-    
-    // 1. Check PIN (Frontend Security)
-    if (pin === '2025') {
-      try {
-        // 2. Sign In to Firebase (Backend Security) 🔐
-        await signInAnonymously(auth)
-        onLogin('admin')
-      } catch (error) {
-        toast({ title: "Connection Error", description: "Could not verify security token.", status: "error" })
-      }
-    } 
-    else if (pin === '1234') {
-      try {
-        await signInAnonymously(auth)
-        logAction('Staff', 'Login', 'Access granted via PIN 1234')
-        onLogin('staff')
-      } catch (error) {
-        toast({ title: "Connection Error", status: "error" })
-      }
-    } 
-    else {
-      toast({ title: "Access Denied", status: "error" })
-      setPin('')
+  const handleLogin = async (e) => {
+    e.preventDefault() // Stop page refresh
+    if (!email || !password) {
+      toast({ title: "Please enter email and password", status: "warning" })
+      return
     }
-    setLoading(false)
+
+    setLoading(true)
+    try {
+      // 1. Talk to Firebase Auth 🔒
+      const userCredential = await signInWithEmailAndPassword(auth, email, password)
+      const user = userCredential.user
+
+      // 2. Determine Role
+      // Simple logic: If it's YOUR email, you are Admin. Everyone else is Staff.
+      // (Change 'admin@nyamoya.com' to whatever email you created in Step 1)
+      const role = user.email === 'admin@nyamoya.com' ? 'admin' : 'staff'
+
+      toast({ title: "Welcome back!", status: "success" })
+      
+      // 3. Pass control to App.jsx
+      onLogin(role)
+
+    } catch (error) {
+      console.error(error)
+      let msg = "Login failed."
+      if (error.code === 'auth/invalid-credential') msg = "Wrong email or password."
+      if (error.code === 'auth/too-many-requests') msg = "Too many failed attempts. Try later."
+      
+      toast({ title: "Access Denied", description: msg, status: "error" })
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
-    <Box h="100vh" display="flex" alignItems="center" justifyContent="center" bgGradient="linear(to-br, purple.600, blue.500)">
-      <Box p={8} bg="white" borderRadius="xl" boxShadow="2xl" width="300px" textAlign="center">
-        <Heading mb={6} size="lg" color="gray.700">Nyamoya ERP</Heading>
-        <Text mb={4} color="gray.500">Enter Security PIN</Text>
-        
-        <VStack spacing={4}>
-          <Input 
-            type="password" 
-            placeholder="****" 
-            textAlign="center" 
-            fontSize="2xl" 
-            letterSpacing="widest"
-            value={pin}
-            onChange={(e) => setPin(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-          />
-          <Button 
-            colorScheme="purple" 
-            width="100%" 
-            onClick={handleLogin}
-            isLoading={loading}
-          >
-            Unlock System 🔓
-          </Button>
+    <Box h="100vh" bg="gray.100" display="flex" alignItems="center" justifyContent="center">
+      <Container maxW="sm" bg="white" p={8} borderRadius="xl" shadow="lg">
+        <VStack spacing={6}>
+          <Heading color="teal.600">Nyamoya ERP 🏭</Heading>
+          <Text color="gray.500">Secure Enterprise Login</Text>
+          
+          <form onSubmit={handleLogin} style={{ width: '100%' }}>
+            <VStack spacing={4}>
+              <FormControl>
+                <FormLabel>Email Address</FormLabel>
+                <Input 
+                  type="email" 
+                  placeholder="admin@nyamoya.com" 
+                  value={email} 
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoFocus
+                />
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>Password</FormLabel>
+                <Input 
+                  type="password" 
+                  placeholder="••••••" 
+                  value={password} 
+                  onChange={(e) => setPassword(e.target.value)} 
+                />
+              </FormControl>
+
+              <Button 
+                type="submit" 
+                colorScheme="teal" 
+                w="100%" 
+                isLoading={loading}
+                loadingText="Verifying..."
+              >
+                Login
+              </Button>
+            </VStack>
+          </form>
+
+          <Text fontSize="xs" color="gray.400">
+            Forgot password? Contact System Administrator.
+          </Text>
         </VStack>
-      </Box>
+      </Container>
     </Box>
   )
 }

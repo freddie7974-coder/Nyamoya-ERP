@@ -1,94 +1,76 @@
 // src/components/LoginScreen.jsx
 import { useState } from 'react'
-import { Box, Button, Input, VStack, Heading, Text, useToast, Container, FormControl, FormLabel, Spinner } from '@chakra-ui/react'
-import { signInWithEmailAndPassword } from 'firebase/auth'
-import { auth } from '../firebase'
+import { Box, Button, VStack, Heading, Text, useToast, Container, Center, Icon } from '@chakra-ui/react'
+import { signInWithPopup } from 'firebase/auth'
+import { auth, googleProvider } from '../firebase'
 
 export default function LoginScreen({ onLogin }) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const toast = useToast()
 
-  const handleLogin = async (e) => {
-    e.preventDefault() // Stop page refresh
-    if (!email || !password) {
-      toast({ title: "Please enter email and password", status: "warning" })
-      return
-    }
+  // 🛡️ SECURITY CHECK
+  // Replace this with the EXACT email you use for your Google Account
+  const ADMIN_EMAIL = "freddie7974@gmail.com" // 👈 CHANGE THIS TO YOUR EMAIL!
 
+  const handleGoogleLogin = async () => {
     setLoading(true)
     try {
-      // 1. Talk to Firebase Auth 🔒
-      const userCredential = await signInWithEmailAndPassword(auth, email, password)
-      const user = userCredential.user
+      // 1. Pop up the Google Window
+      const result = await signInWithPopup(auth, googleProvider)
+      const user = result.user
 
-      // 2. Determine Role
-      // Simple logic: If it's YOUR email, you are Admin. Everyone else is Staff.
-      // (Change 'admin@nyamoya.com' to whatever email you created in Step 1)
-      const role = user.email === 'admin@nyamoya.com' ? 'admin' : 'staff'
-
-      toast({ title: "Welcome back!", status: "success" })
+      // 2. Check who just logged in
+      let role = 'staff'
       
-      // 3. Pass control to App.jsx
+      // If the email matches YOURS, you are Admin.
+      if (user.email === ADMIN_EMAIL) {
+        role = 'admin'
+        toast({ title: `Welcome Boss! 👑`, status: "success" })
+      } else {
+        toast({ title: `Welcome Staff (${user.displayName})`, status: "success" })
+      }
+
+      // 3. Enter the App
       onLogin(role)
 
     } catch (error) {
       console.error(error)
-      let msg = "Login failed."
-      if (error.code === 'auth/invalid-credential') msg = "Wrong email or password."
-      if (error.code === 'auth/too-many-requests') msg = "Too many failed attempts. Try later."
-      
-      toast({ title: "Access Denied", description: msg, status: "error" })
+      toast({ title: "Login Failed", description: error.message, status: "error" })
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <Box h="100vh" bg="gray.100" display="flex" alignItems="center" justifyContent="center">
-      <Container maxW="sm" bg="white" p={8} borderRadius="xl" shadow="lg">
-        <VStack spacing={6}>
-          <Heading color="teal.600">Nyamoya ERP 🏭</Heading>
-          <Text color="gray.500">Secure Enterprise Login</Text>
+    <Box h="100vh" bgGradient="linear(to-br, teal.500, blue.600)" display="flex" alignItems="center" justifyContent="center">
+      <Container maxW="sm" bg="white" p={10} borderRadius="2xl" shadow="2xl" textAlign="center">
+        <VStack spacing={8}>
           
-          <form onSubmit={handleLogin} style={{ width: '100%' }}>
-            <VStack spacing={4}>
-              <FormControl>
-                <FormLabel>Email Address</FormLabel>
-                <Input 
-                  type="email" 
-                  placeholder="admin@nyamoya.com" 
-                  value={email} 
-                  onChange={(e) => setEmail(e.target.value)}
-                  autoFocus
-                />
-              </FormControl>
+          <Box>
+            <Heading size="xl" color="gray.800" mb={2}>Nyamoya ERP</Heading>
+            <Text color="gray.500" fontSize="lg">Enterprise Login</Text>
+          </Box>
 
-              <FormControl>
-                <FormLabel>Password</FormLabel>
-                <Input 
-                  type="password" 
-                  placeholder="••••••" 
-                  value={password} 
-                  onChange={(e) => setPassword(e.target.value)} 
-                />
-              </FormControl>
-
-              <Button 
-                type="submit" 
-                colorScheme="teal" 
-                w="100%" 
-                isLoading={loading}
-                loadingText="Verifying..."
-              >
-                Login
-              </Button>
-            </VStack>
-          </form>
+          <Center w="100%">
+            <Button 
+              w="100%" 
+              h="60px"
+              variant="outline" 
+              colorScheme="blue"
+              isLoading={loading}
+              loadingText="Connecting..."
+              onClick={handleGoogleLogin}
+              leftIcon={<Text fontSize="2xl">G</Text>} // Simple Google Icon representation
+              _hover={{ bg: 'blue.50', transform: 'scale(1.02)' }}
+              transition="all 0.2s"
+              fontSize="lg"
+            >
+              Sign in with Google
+            </Button>
+          </Center>
 
           <Text fontSize="xs" color="gray.400">
-            Forgot password? Contact System Administrator.
+            Authorized Personnel Only
           </Text>
         </VStack>
       </Container>

@@ -1,125 +1,165 @@
 // src/components/HRScreen.jsx
 import { useState, useEffect } from 'react'
-import { Box, Button, VStack, Heading, HStack, Text, Input, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalCloseButton, useDisclosure, SimpleGrid, Badge, useToast, FormControl, FormLabel } from '@chakra-ui/react'
-import { collection, addDoc, getDocs, serverTimestamp } from 'firebase/firestore'
+import { Box, Button, Table, Thead, Tbody, Tr, Th, Td, Heading, HStack, Input, Select, useToast, Spinner, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, VStack, Text, Badge, IconButton } from '@chakra-ui/react'
+import { collection, getDocs, setDoc, doc, deleteDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 
 export default function HRScreen({ onBack }) {
-  const [employees, setEmployees] = useState([])
+  const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const { isOpen, onOpen, onClose } = useDisclosure()
+  
+  // Form State
+  const [email, setEmail] = useState('')
+  const [name, setName] = useState('')
+  const [role, setRole] = useState('staff')
+
   const toast = useToast()
 
-  // New Employee Form
-  const [name, setName] = useState('')
-  const [role, setRole] = useState('')
-  const [salary, setSalary] = useState('')
-
-  const fetchEmployees = async () => {
-    try {
-      const querySnapshot = await getDocs(collection(db, "employees"))
-      const items = []
-      querySnapshot.forEach((doc) => {
-        items.push({ id: doc.id, ...doc.data() })
-      })
-      setEmployees(items)
-      setLoading(false)
-    } catch (error) {
-      console.error(error)
-    }
-  }
-
+  // 1. Fetch Authorized Users
   useEffect(() => {
-    fetchEmployees()
+    fetchUsers()
   }, [])
 
-  const handleAddEmployee = async () => {
-    if (!name || !salary) return
+  const fetchUsers = async () => {
     try {
-      await addDoc(collection(db, "employees"), {
-        name,
-        role,
-        salary: parseFloat(salary),
-        joinedDate: serverTimestamp()
+      const querySnapshot = await getDocs(collection(db, "allowed_users"))
+      const list = []
+      querySnapshot.forEach((doc) => {
+        list.push({ id: doc.id, ...doc.data() })
       })
-      toast({ title: "Employee Added", status: "success" })
-      setName(''); setRole(''); setSalary('')
-      onClose()
-      fetchEmployees()
+      setUsers(list)
     } catch (error) {
-      toast({ title: "Error", status: "error" })
+      toast({ title: "Error loading staff list", status: "error" })
+    } finally {
+      setLoading(false)
     }
   }
 
-  const paySalary = async (emp) => {
-    if (!confirm(`Confirm paying TZS ${emp.salary.toLocaleString()} to ${emp.name}?`)) return
-    
+  // 2. Add New Employee 👤
+  const handleAddUser = async () => {
+    if (!email || !name) {
+      toast({ title: "Email and Name are required", status: "warning" })
+      return
+    }
+
     try {
-      // Create Expense Entry Automatically
-      await addDoc(collection(db, "expenses"), {
-        description: `Salary: ${emp.name}`,
-        amount: emp.salary,
-        category: 'salary',
-        date: serverTimestamp()
+      // Use Email as the Document ID for easy lookup later
+      await setDoc(doc(db, "allowed_users", email.toLowerCase()), {
+        name,
+        email: email.toLowerCase(),
+        role,
+        addedAt: serverTimestamp()
       })
-      
-      toast({ 
-        title: "Salary Paid 💸", 
-        description: "Recorded in Expenses automatically.", 
-        status: "success" 
-      })
+
+      toast({ title: "Staff Member Added! ✅", status: "success" })
+      setEmail('')
+      setName('')
+      setRole('staff')
+      onClose()
+      fetchUsers() 
+
     } catch (error) {
-      toast({ title: "Error paying salary", status: "error" })
+      console.error(error)
+      toast({ title: "Error adding user", status: "error" })
     }
   }
+
+  // 3. Fire Employee (Remove Access) 🚫
+  const handleRemoveUser = async (userId) => {
+    if (window.confirm("Are you sure you want to remove this user? They will lose access immediately.")) {
+      try {
+        await deleteDoc(doc(db, "allowed_users", userId))
+        toast({ title: "User Removed", status: "info" })
+        fetchUsers()
+      } catch (error) {
+        toast({ title: "Error removing user", status: "error" })
+      }
+    }
+  }
+
+  if (loading) return <Box p={10} textAlign="center"><Spinner size="xl" /></Box>
 
   return (
-    <Box p={4} maxW="800px" mx="auto">
-      <HStack justifyContent="space-between" mb={6}>
-        <Button onClick={onBack} variant="ghost">← Back</Button>
-        <Heading size="md" color="cyan.700">HR Manager 👔</Heading>
-        <Button colorScheme="cyan" size="sm" onClick={onOpen}>+ Add Staff</Button>
+    <Box p={4} maxW="1000px" mx="auto">
+      <HStack mb={6} justifyContent="space-between">
+        <HStack>
+          <Button onClick={onBack} variant="ghost">← Back</Button>
+          <Heading size="md" color="pink.600">Staff & HR Manager 👥</Heading>
+        </HStack>
+        <Button colorScheme="pink" onClick={onOpen}>+ Add Staff</Button>
       </HStack>
 
-      <SimpleGrid columns={[1, 2]} spacing={4}>
-        {employees.map((emp) => (
-          <Box key={emp.id} p={5} borderWidth="1px" borderRadius="xl" bg="white" shadow="sm">
-            <HStack justify="space-between" mb={2}>
-              <Heading size="md">{emp.name}</Heading>
-              <Badge colorScheme="purple">{emp.role}</Badge>
-            </HStack>
-            <Text color="gray.600" mb={4}>Base Salary: TZS {emp.salary.toLocaleString()}</Text>
-            
-            <Button colorScheme="green" size="sm" width="100%" onClick={() => paySalary(emp)}>
-              Pay Salary Now 💸
-            </Button>
-          </Box>
-        ))}
-      </SimpleGrid>
+      <Box bg="white" shadow="md" borderRadius="xl" overflow="hidden">
+        <Table variant="simple">
+          <Thead bg="gray.100">
+            <Tr>
+              <Th>Name</Th>
+              <Th>Email (Google Account)</Th>
+              <Th>Role</Th>
+              <Th>Action</Th>
+            </Tr>
+          </Thead>
+          <Tbody>
+            {users.map((user) => (
+              <Tr key={user.id}>
+                <Td fontWeight="bold">{user.name}</Td>
+                <Td>{user.email}</Td>
+                <Td>
+                  <Badge colorScheme={user.role === 'admin' ? 'purple' : 'green'}>
+                    {user.role.toUpperCase()}
+                  </Badge>
+                </Td>
+                <Td>
+                  <IconButton 
+                    icon={<Text>🗑️</Text>} 
+                    colorScheme="red" 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => handleRemoveUser(user.id)}
+                    aria-label="Remove user"
+                  />
+                </Td>
+              </Tr>
+            ))}
+            {users.length === 0 && (
+              <Tr><Td colSpan={4} textAlign="center" py={10}>No staff added yet.</Td></Tr>
+            )}
+          </Tbody>
+        </Table>
+      </Box>
 
-      {/* Modal: Add Employee */}
-      <Modal isOpen={isOpen} onClose={onClose}>
+      {/* Add Staff Modal */}
+      <Modal isOpen={isOpen} onClose={onClose} isCentered>
         <ModalOverlay />
         <ModalContent>
-          <ModalHeader>Add Team Member</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody pb={6}>
+          <ModalHeader>Authorize New Staff</ModalHeader>
+          <ModalBody>
             <VStack spacing={4}>
-              <FormControl>
-                <FormLabel>Name</FormLabel>
+              <Box w="100%">
+                <Text mb={2} fontWeight="bold">Staff Name</Text>
                 <Input placeholder="e.g. Juma" value={name} onChange={(e) => setName(e.target.value)} />
-              </FormControl>
-              <FormControl>
-                <FormLabel>Role</FormLabel>
-                <Input placeholder="e.g. Sales / Production" value={role} onChange={(e) => setRole(e.target.value)} />
-              </FormControl>
-              <FormControl>
-                <FormLabel>Salary (TZS)</FormLabel>
-                <Input type="number" placeholder="e.g. 100000" value={salary} onChange={(e) => setSalary(e.target.value)} />
-              </FormControl>
-              <Button colorScheme="cyan" w="100%" onClick={handleAddEmployee}>Save Employee</Button>
+              </Box>
+              <Box w="100%">
+                <Text mb={2} fontWeight="bold">Google Email Address</Text>
+                <Input placeholder="e.g. juma@gmail.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+                <Text fontSize="xs" color="gray.500" mt={1}>They must use this exact email to log in.</Text>
+              </Box>
+              <Box w="100%">
+                <Text mb={2} fontWeight="bold">Role</Text>
+                <Select value={role} onChange={(e) => setRole(e.target.value)}>
+                  <option value="staff">Staff (Sales & Production only)</option>
+                  <option value="manager">Manager (Can see Reports)</option>
+                  <option value="admin">Admin (Full Access)</option>
+                </Select>
+              </Box>
             </VStack>
           </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" mr={3} onClick={onClose}>Cancel</Button>
+            <Button colorScheme="pink" onClick={handleAddUser}>Authorize User</Button>
+          </ModalFooter>
         </ModalContent>
       </Modal>
     </Box>

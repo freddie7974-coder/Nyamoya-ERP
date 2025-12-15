@@ -1,37 +1,56 @@
 // src/components/LoginScreen.jsx
 import { useState } from 'react'
-import { Box, Button, VStack, Heading, Text, useToast, Container, Center, Icon } from '@chakra-ui/react'
-import { signInWithPopup } from 'firebase/auth'
-import { auth, googleProvider } from '../firebase'
+import { Box, Button, VStack, Heading, Text, useToast, Container, Center } from '@chakra-ui/react'
+import { signInWithPopup, signOut } from 'firebase/auth' // 👈 Added signOut
+import { doc, getDoc } from 'firebase/firestore'
+import { auth, googleProvider, db } from '../firebase' // 👈 Added db
 
 export default function LoginScreen({ onLogin }) {
   const [loading, setLoading] = useState(false)
   const toast = useToast()
 
-  // 🛡️ SECURITY CHECK
-  // Replace this with the EXACT email you use for your Google Account
-  const ADMIN_EMAIL = "freddie7974@gmail.com" // 👈 CHANGE THIS TO YOUR EMAIL!
+  // 🛡️ SUPER ADMIN (The Fallback)
+  const ADMIN_EMAIL = "freddie7974@gmail.com" 
 
   const handleGoogleLogin = async () => {
     setLoading(true)
     try {
-      // 1. Pop up the Google Window
+      // 1. Google Login Window
       const result = await signInWithPopup(auth, googleProvider)
       const user = result.user
+      const userEmail = user.email.toLowerCase() // Always use lowercase for matching
 
-      // 2. Check who just logged in
-      let role = 'staff'
-      
-      // If the email matches YOURS, you are Admin.
-      if (user.email === ADMIN_EMAIL) {
-        role = 'admin'
+      // 2. CHECK: Is this YOU (The Super Admin)?
+      if (userEmail === ADMIN_EMAIL.toLowerCase()) {
         toast({ title: `Welcome Boss! 👑`, status: "success" })
-      } else {
-        toast({ title: `Welcome Staff (${user.displayName})`, status: "success" })
+        onLogin('admin')
+        return // Stop here, you are in!
       }
 
-      // 3. Enter the App
-      onLogin(role)
+      // 3. CHECK: Is this user in the "Allowed List" in Database?
+      // We look for a document where the ID is the email address
+      const docRef = doc(db, "allowed_users", userEmail)
+      const docSnap = await getDoc(docRef)
+
+      if (docSnap.exists()) {
+        // ✅ USER FOUND!
+        const userData = docSnap.data()
+        const userRole = userData.role || 'staff' // Default to staff if role missing
+        
+        toast({ title: `Welcome ${userData.name}`, description: `Logged in as ${userRole.toUpperCase()}`, status: "success" })
+        onLogin(userRole)
+      } else {
+        // ⛔ USER NOT FOUND -> KICK THEM OUT
+        await signOut(auth) // Log them out of Firebase immediately
+        
+        toast({ 
+          title: "Access Denied 🚫", 
+          description: "You are not an authorized employee. Contact HR.", 
+          status: "error",
+          duration: 5000,
+          isClosable: true
+        })
+      }
 
     } catch (error) {
       console.error(error)
@@ -58,9 +77,9 @@ export default function LoginScreen({ onLogin }) {
               variant="outline" 
               colorScheme="blue"
               isLoading={loading}
-              loadingText="Connecting..."
+              loadingText="Verifying Access..."
               onClick={handleGoogleLogin}
-              leftIcon={<Text fontSize="2xl">G</Text>} // Simple Google Icon representation
+              leftIcon={<Text fontSize="2xl">G</Text>}
               _hover={{ bg: 'blue.50', transform: 'scale(1.02)' }}
               transition="all 0.2s"
               fontSize="lg"

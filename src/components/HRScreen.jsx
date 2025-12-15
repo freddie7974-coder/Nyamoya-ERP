@@ -1,8 +1,8 @@
 // src/components/HRScreen.jsx
 import { useState, useEffect } from 'react'
 import { Box, Button, Table, Thead, Tbody, Tr, Th, Td, Heading, HStack, Input, Select, useToast, Spinner, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, VStack, Text, Badge, IconButton } from '@chakra-ui/react'
-import { collection, getDocs, setDoc, doc, deleteDoc, serverTimestamp } from 'firebase/firestore'
-import { doc, getDoc } from 'firebase/firestore'
+// 👇 FIXED IMPORTS: Combined everything into one line
+import { collection, getDocs, setDoc, doc, deleteDoc, serverTimestamp, getDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 
 export default function HRScreen({ onBack }) {

@@ -1,12 +1,12 @@
 // src/components/MonthlyReportScreen.jsx
 import { useState, useEffect } from 'react'
-import { Box, Button, Heading, Select, SimpleGrid, Stat, StatLabel, StatNumber, StatHelpText, Table, Thead, Tbody, Tr, Th, Td, VStack, Text, Spinner } from '@chakra-ui/react'
+import { Box, Button, Heading, Select, SimpleGrid, Stat, StatLabel, StatNumber, Table, Tbody, Tr, Td, Spinner, Text } from '@chakra-ui/react'
 import { collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebase'
 
 export default function MonthlyReportScreen({ onBack }) {
   const [loading, setLoading] = useState(false)
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth()) // 0 = Jan, 11 = Dec
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth()) // 0 = Jan
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   
   const [report, setReport] = useState({
@@ -17,7 +17,7 @@ export default function MonthlyReportScreen({ onBack }) {
     transactionCount: 0
   })
 
-  // Generate Year Options (2024 - 2030)
+  // Generate Year Options
   const years = Array.from({length: 6}, (_, i) => 2024 + i)
   
   const months = [
@@ -25,12 +25,26 @@ export default function MonthlyReportScreen({ onBack }) {
     "July", "August", "September", "October", "November", "December"
   ]
 
+  // 🛡️ SAFE DATE HELPER (Prevents Crashing)
+  const getSafeDate = (data, fieldName) => {
+    try {
+      if (data[fieldName] && typeof data[fieldName].toDate === 'function') {
+        return data[fieldName].toDate()
+      }
+      // If it's already a JS Date (rare but possible in some setups)
+      if (data[fieldName] instanceof Date) return data[fieldName]
+      
+      return null // Return null if invalid/missing
+    } catch (err) {
+      return null
+    }
+  }
+
   const generateReport = async () => {
     setLoading(true)
     try {
-      // Define Start and End Date for the selected month
       const start = new Date(selectedYear, selectedMonth, 1)
-      const end = new Date(selectedYear, selectedMonth + 1, 0, 23, 59, 59) // Last second of the month
+      const end = new Date(selectedYear, selectedMonth + 1, 0, 23, 59, 59)
 
       let totalSales = 0
       let totalTx = 0
@@ -41,9 +55,11 @@ export default function MonthlyReportScreen({ onBack }) {
       const salesSnap = await getDocs(collection(db, "sales"))
       salesSnap.forEach(doc => {
         const data = doc.data()
-        const date = data.createdAt?.toDate()
-        if (date >= start && date <= end) {
-          totalSales += data.totalAmount || 0
+        // Check 'createdAt' OR 'date' to be safe
+        const date = getSafeDate(data, 'createdAt') || getSafeDate(data, 'date')
+        
+        if (date && date >= start && date <= end) {
+          totalSales += parseFloat(data.totalAmount || 0)
           totalTx++
         }
       })
@@ -52,9 +68,10 @@ export default function MonthlyReportScreen({ onBack }) {
       const expSnap = await getDocs(collection(db, "expenses"))
       expSnap.forEach(doc => {
         const data = doc.data()
-        const date = data.date?.toDate() // Assuming expenses have a 'date' timestamp
-        if (date >= start && date <= end) {
-          totalExpenses += data.amount || 0
+        const date = getSafeDate(data, 'date') || getSafeDate(data, 'createdAt')
+        
+        if (date && date >= start && date <= end) {
+          totalExpenses += parseFloat(data.amount || 0)
         }
       })
 
@@ -62,10 +79,11 @@ export default function MonthlyReportScreen({ onBack }) {
       const wasteSnap = await getDocs(collection(db, "wastage"))
       wasteSnap.forEach(doc => {
         const data = doc.data()
-        const date = data.reportedAt?.toDate()
-        if (date >= start && date <= end) {
-          // Assuming you saved 'lossValue' in wastage. If not, estimate.
-          totalWastage += data.lossValue || 0 
+        const date = getSafeDate(data, 'reportedAt') || getSafeDate(data, 'date')
+        
+        if (date && date >= start && date <= end) {
+          // If 'lossValue' is missing, assume 0 to prevent NaN errors
+          totalWastage += parseFloat(data.lossValue || 0)
         }
       })
 
@@ -78,13 +96,12 @@ export default function MonthlyReportScreen({ onBack }) {
       })
 
     } catch (error) {
-      console.error(error)
+      console.error("Report Error:", error)
     } finally {
       setLoading(false)
     }
   }
 
-  // Run report when selection changes
   useEffect(() => {
     generateReport()
   }, [selectedMonth, selectedYear])

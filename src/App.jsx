@@ -1,6 +1,6 @@
 // src/App.jsx
 import { useState, useEffect } from 'react'
-import { ChakraProvider, Box, Container } from '@chakra-ui/react' // 👈 Added Container
+import { ChakraProvider, Box, Container } from '@chakra-ui/react' 
 
 // 👇 IMPORTS
 import LoginScreen from './components/LoginScreen'
@@ -58,11 +58,17 @@ function App() {
   return (
     <ChakraProvider>
       {/* ✨ THE FIX: 
-         1. Box bg="gray.50": Keeps the full background gray.
-         2. Container: Centers the content and limits width on laptops.
+         1. Box: Keeps the gray background covering the whole screen.
+         2. Container: centerContent={false} lets us handle layout manually.
+         3. mx="auto": FORCE horizontal centering.
       */}
       <Box minH="100vh" bg="gray.50">
-        <Container maxW="container.xl" p={0} minH="100vh">
+        <Container 
+          maxW="container.xl" 
+          p={4} 
+          mx="auto" // 👈 THIS is the key to centering the container itself
+          minH="100vh"
+        >
           
           {/* DASHBOARD */}
           {currentScreen === 'dashboard' && (

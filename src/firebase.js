@@ -4,13 +4,13 @@ import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore"; /
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
 const firebaseConfig = {
-  // ... KEEP YOUR EXISTING KEYS HERE ...
-  apiKey: "YOUR_EXISTING_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT",
-  storageBucket: "...",
-  messagingSenderId: "...",
-  appId: "..."
+  apiKey: "AIzaSyDG4EQb7a_yVWVK23ljdFYEVklZj4QIkDA",
+  authDomain: "nyamoya-36486.firebaseapp.com",
+  projectId: "nyamoya-36486",
+  storageBucket: "nyamoya-36486.firebasestorage.app",
+  messagingSenderId: "497346686010",
+  appId: "1:497346686010:web:efc8211cd0528ca5fdd903",
+  measurementId: "G-SF6G3KLJD5"
 };
 
 // Initialize Firebase

@@ -1,138 +1,122 @@
 // src/components/LoginScreen.jsx
 import { useState } from 'react'
-import { Box, Button, Input, VStack, Heading, Text, useToast, Container, FormControl, FormLabel, Divider, AbsoluteCenter, Center } from '@chakra-ui/react'
-import { signInWithPopup, signInWithEmailAndPassword, signOut } from 'firebase/auth'
-import { doc, getDoc } from 'firebase/firestore'
+import { Box, Button, VStack, Heading, Text, Input, useToast, Container, Alert, AlertIcon } from '@chakra-ui/react'
+import { signInWithPopup } from 'firebase/auth'
 import { auth, googleProvider, db } from '../firebase'
+import { collection, query, where, getDocs } from 'firebase/firestore'
 
 export default function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [password, setPassword] = useState('') // (Optional: For future use)
+  const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  
   const toast = useToast()
 
-  // 🛡️ SUPER ADMIN FALLBACK
-  const ADMIN_EMAIL = "freddie7974@gmail.com" 
-
-  // 🧠 SHARED LOGIC: Checks database for ANY user (Google or Password)
-  const checkUserAccess = async (user) => {
-    const userEmail = user.email.toLowerCase()
-
-    // 1. Check Super Admin
-    if (userEmail === ADMIN_EMAIL.toLowerCase()) {
-      toast({ title: `Welcome Boss! 👑`, status: "success" })
-      onLogin('admin')
-      return
-    }
-
-    // 2. Check HR Database
-    const docRef = doc(db, "allowed_users", userEmail)
-    const docSnap = await getDoc(docRef)
-
-    if (docSnap.exists()) {
-      const userData = docSnap.data()
-      const userRole = userData.role || 'staff'
-      toast({ title: `Welcome ${userData.name}`, description: `Logged in as ${userRole.toUpperCase()}`, status: "success" })
-      onLogin(userRole)
-    } else {
-      await signOut(auth) // Kick them out
-      toast({ 
-        title: "Access Denied 🚫", 
-        description: "You are not an authorized employee. Contact HR.", 
-        status: "error",
-        duration: 5000,
-        isClosable: true
-      })
-    }
-  }
-
-  // 🔵 METHOD 1: Google Login
+  // 🔐 SECURE GOOGLE LOGIN
   const handleGoogleLogin = async () => {
     setLoading(true)
+    setError('')
+    
     try {
+      // 1. Ask Google who this is
       const result = await signInWithPopup(auth, googleProvider)
-      await checkUserAccess(result.user)
-    } catch (error) {
-      console.error(error)
-      toast({ title: "Google Login Failed", description: error.message, status: "error" })
+      const googleEmail = result.user.email
+
+      // 🛑 2. SECURITY CHECK: Is this email in our database?
+      // We check the "users" collection (where HR adds staff)
+      const q = query(collection(db, "users"), where("email", "==", googleEmail))
+      const querySnapshot = await getDocs(q)
+
+      // A. Special Backdoor for YOU (The Boss) to set up the system first
+      // Change this to your EXACT email
+      if (googleEmail === "freddie7974@gmail.com") {
+        onLogin('admin')
+        return
+      }
+
+      // B. If email NOT found in database -> BLOCK THEM 🚫
+      if (querySnapshot.empty) {
+        setError("Access Denied: You are not authorized staff.")
+        await auth.signOut() // Kick them out immediately
+        setLoading(false)
+        return
+      }
+
+      // C. If Found -> Check Role
+      const userData = querySnapshot.docs[0].data()
+      
+      if (userData.role === 'admin') {
+        onLogin('admin')
+      } else {
+        onLogin('staff')
+      }
+      
+      toast({ title: "Welcome back!", status: "success" })
+
+    } catch (err) {
+      console.error(err)
+      setError("Login Failed. Please try again.")
     } finally {
       setLoading(false)
     }
   }
 
-  // 🟢 METHOD 2: Email/Password Login
-  const handlePasswordLogin = async (e) => {
-    e.preventDefault()
-    if (!email || !password) {
-      toast({ title: "Please enter email and password", status: "warning" })
-      return
-    }
-    setLoading(true)
-    try {
-      const result = await signInWithEmailAndPassword(auth, email, password)
-      await checkUserAccess(result.user)
-    } catch (error) {
-      console.error(error)
-      let msg = "Login failed."
-      if (error.code === 'auth/invalid-credential') msg = "Wrong email or password."
-      toast({ title: "Error", description: msg, status: "error" })
-    } finally {
-      setLoading(false)
+  // (Optional: Keep the simple manual login for testing if you want, or remove it)
+  const handleManualLogin = () => {
+    if (email === 'admin' && password === 'admin') {
+      onLogin('admin')
+    } else if (email === 'staff' && password === '1234') {
+      onLogin('staff')
+    } else {
+      setError('Invalid credentials')
     }
   }
 
   return (
-    <Box h="100vh" bg="gray.100" display="flex" alignItems="center" justifyContent="center">
-      <Container maxW="sm" bg="white" p={8} borderRadius="xl" shadow="lg">
+    <Box minH="100vh" bgGradient="linear(to-b, teal.500, gray.100)" display="flex" alignItems="center" justifyContent="center">
+      <Container maxW="md" bg="white" p={8} borderRadius="xl" boxShadow="2xl">
         <VStack spacing={6}>
           <Box textAlign="center">
-            <Heading size="lg" color="teal.600">Nyamoya ERP</Heading>
-            <Text color="gray.500" fontSize="sm">Secure Enterprise Login</Text>
+            <Heading color="teal.600" mb={2}>Nyamoya ERP</Heading>
+            <Text color="gray.500">Secure Enterprise Login</Text>
           </Box>
+
+          {/* Error Message Area */}
+          {error && (
+            <Alert status="error" borderRadius="md">
+              <AlertIcon />
+              {error}
+            </Alert>
+          )}
+
+          {/* Simple Inputs (Optional, can be removed if you only want Google) */}
+          <Input 
+            placeholder="Email Address" 
+            value={email} 
+            onChange={(e) => setEmail(e.target.value)} 
+          />
+          <Input 
+            placeholder="Password" 
+            type="password" 
+            value={password} 
+            onChange={(e) => setPassword(e.target.value)} 
+          />
+
+          <Button colorScheme="teal" width="100%" onClick={handleManualLogin}>
+            Login
+          </Button>
           
-          {/* METHOD 1: EMAIL FORM */}
-          <form onSubmit={handlePasswordLogin} style={{ width: '100%' }}>
-            <VStack spacing={4}>
-              <FormControl>
-                <FormLabel fontSize="sm">Email Address</FormLabel>
-                <Input 
-                  type="email" 
-                  value={email} 
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </FormControl>
+          <Text fontSize="sm" color="gray.400">OR</Text>
 
-              <FormControl>
-                <FormLabel fontSize="sm">Password</FormLabel>
-                <Input 
-                  type="password" 
-                  value={password} 
-                  onChange={(e) => setPassword(e.target.value)} 
-                />
-              </FormControl>
-
-              <Button type="submit" colorScheme="teal" w="100%" isLoading={loading}>
-                Login
-              </Button>
-            </VStack>
-          </form>
-
-          {/* DIVIDER */}
-          <Box position='relative' w="100%" py={2}>
-            <Divider />
-            <AbsoluteCenter bg='white' px='4' fontSize="sm" color="gray.500">
-              OR
-            </AbsoluteCenter>
-          </Box>
-
-          {/* METHOD 2: GOOGLE */}
+          {/* 👇 GOOGLE BUTTON */}
           <Button 
-            w="100%" 
+            width="100%" 
             variant="outline" 
             colorScheme="blue" 
-            onClick={handleGoogleLogin}
             isLoading={loading}
-            leftIcon={<Text fontWeight="bold">G</Text>}
+            onClick={handleGoogleLogin}
+            leftIcon={<Text fontWeight="bold" fontSize="lg">G</Text>}
           >
             Sign in with Google
           </Button>

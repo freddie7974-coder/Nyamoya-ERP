@@ -21,7 +21,8 @@ import RestockScreen from './components/RestockScreen'
 import AnalyticsScreen from './components/AnalyticsScreen'
 import RawMaterialScreen from './components/RawMaterialScreen'
 import DataExportScreen from './components/DataExportScreen' 
-import AuditLogScreen from './components/AuditLogScreen' 
+import AuditLogScreen from './components/AuditLogScreen'
+import BalanceSheetScreen from './components/BalanceSheetScreen' 
 
 function App() {
   const [userRole, setUserRole] = useState(null)
@@ -99,6 +100,7 @@ function App() {
               {currentScreen === 'customers' && <CustomerScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'suppliers' && <SupplierScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'wastage' && <WastageScreen onBack={() => setCurrentScreen('dashboard')} />}
+              {currentScreen === 'balance_sheet' && <BalanceSheetScreen onBack={() => setCurrentScreen('dashboard')} />}
             </>
           )}
 

@@ -136,6 +136,7 @@ export default function Dashboard({ userRole, onNavigate, onLogout }) {
             <MenuCard label="Report Wastage" color="red" icon="🗑️" onClick={() => onNavigate('wastage')} />
             <MenuCard label="Audit Logs" color="blackAlpha" icon="🛡️" onClick={() => onNavigate('audit')} />
             <MenuCard label="Export Data" color="gray" icon="💾" onClick={() => onNavigate('export')} />
+            <MenuCard label="Balance Sheet" color="cyan" icon="⚖️" onClick={() => onNavigate('balance_sheet')} />
           </SimpleGrid>
         </>
       )}

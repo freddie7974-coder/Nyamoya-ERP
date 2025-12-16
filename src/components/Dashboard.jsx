@@ -23,7 +23,7 @@ export default function Dashboard({ userRole, onNavigate, onLogout }) {
       const now = new Date()
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1) // 1st day of current month
       
-      // 2. Calculate Sales
+      // 2. Calculate Sales (For This Month)
       const salesSnap = await getDocs(collection(db, "sales"))
       let total = 0
       
@@ -34,22 +34,31 @@ export default function Dashboard({ userRole, onNavigate, onLogout }) {
         
         // Only count if sale happened this month
         if (saleDate >= startOfMonth) {
-          total += data.totalAmount || 0
+          total += parseFloat(data.totalAmount || 0)
         }
       })
 
-      // 3. Low Stock Alerts
+      // 3. Low Stock Alerts (Fixed Logic with parseFloat) 🚨
       const lowItems = []
+      
+      // Check Raw Materials (< 20 units)
       const rawSnap = await getDocs(collection(db, "raw_materials"))
       rawSnap.forEach(doc => {
         const data = doc.data()
-        if ((data.currentStock || 0) < 20) lowItems.push({ name: data.name, stock: data.currentStock, type: 'Raw Material' })
+        const stock = parseFloat(data.currentStock || 0)
+        if (stock < 20) {
+          lowItems.push({ name: data.name, stock: stock, type: 'Raw Material' })
+        }
       })
 
+      // Check Finished Products (< 10 units)
       const prodSnap = await getDocs(collection(db, "inventory"))
       prodSnap.forEach(doc => {
         const data = doc.data()
-        if ((data.currentStock || 0) < 10) lowItems.push({ name: data.name, stock: data.currentStock, type: 'Product' })
+        const stock = parseFloat(data.currentStock || 0)
+        if (stock < 10) {
+          lowItems.push({ name: data.name, stock: stock, type: 'Product' })
+        }
       })
 
       setStats({ todaySales: total, monthSales: total, lowStockItems: lowItems })
@@ -143,18 +152,20 @@ export default function Dashboard({ userRole, onNavigate, onLogout }) {
             <MenuCard label="Product Catalogue" color="purple" icon="📦" onClick={() => onNavigate('stock')} />
             <MenuCard label="Expenses" color="red" icon="💸" onClick={() => onNavigate('expense')} />
             
-            {/* 👇 UPDATED: Added Archives Button and moved Analytics */}
+            {/* Business Intelligence */}
             <MenuCard label="Analytics & Profit" color="purple" icon="📈" onClick={() => onNavigate('analytics')} />
             <MenuCard label="Monthly Archives" color="teal" icon="📅" onClick={() => onNavigate('monthly_report')} />
 
+            {/* Other Records */}
             <MenuCard label="Customers (CRM)" color="blue" icon="🤝" onClick={() => onNavigate('customers')} />
             <MenuCard label="Suppliers" color="orange" icon="🚛" onClick={() => onNavigate('suppliers')} />
             <MenuCard label="Report Wastage" color="red" icon="🗑️" onClick={() => onNavigate('wastage')} />
             <MenuCard label="Audit Logs" color="blackAlpha" icon="🛡️" onClick={() => onNavigate('audit')} />
+            
+            {/* System & Finance */}
             <MenuCard label="Export Data" color="gray" icon="💾" onClick={() => onNavigate('export')} />
             <MenuCard label="Balance Sheet" color="cyan" icon="⚖️" onClick={() => onNavigate('balance_sheet')} />
             <MenuCard label="System Tools" color="red" icon="🛠️" onClick={() => onNavigate('system_tools')} />
-            <MenuCard label="Monthly Archives" color="teal" icon="📅" onClick={() => onNavigate('monthly_report')} />
           </SimpleGrid>
         </>
       )}

@@ -12,9 +12,7 @@ import HRScreen from './components/HRScreen'
 import CustomerScreen from './components/CustomerScreen'
 import SupplierScreen from './components/SupplierScreen'
 import WastageScreen from './components/WastageScreen'
-import NetworkStatus from './components/NetworkStatus' // 👈 Import NetworkStatus
-import SystemToolsScreen from './components/SystemToolsScreen'
-import MonthlyReportScreen from './components/MonthlyReportScreen'
+import NetworkStatus from './components/NetworkStatus' 
 
 // Admin Screens
 import StockScreen from './components/StockScreen'
@@ -25,7 +23,9 @@ import AnalyticsScreen from './components/AnalyticsScreen'
 import RawMaterialScreen from './components/RawMaterialScreen'
 import DataExportScreen from './components/DataExportScreen' 
 import AuditLogScreen from './components/AuditLogScreen'
-import BalanceSheetScreen from './components/BalanceSheetScreen' // 👈 Import BalanceSheet
+import BalanceSheetScreen from './components/BalanceSheetScreen'
+import MonthlyReportScreen from './components/MonthlyReportScreen' // 👈 THIS WAS MISSING!
+import SystemToolsScreen from './components/SystemToolsScreen'
 
 function App() {
   const [userRole, setUserRole] = useState(null)
@@ -102,9 +102,8 @@ function App() {
               {currentScreen === 'suppliers' && <SupplierScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'wastage' && <WastageScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'balance_sheet' && <BalanceSheetScreen onBack={() => setCurrentScreen('dashboard')} />}
+              {currentScreen === 'monthly_report' && <MonthlyReportScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'system_tools' && <SystemToolsScreen onBack={() => setCurrentScreen('dashboard')} />}
-                
-              
             </>
           )}
 

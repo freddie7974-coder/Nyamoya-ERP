@@ -12,6 +12,7 @@ import HRScreen from './components/HRScreen'
 import CustomerScreen from './components/CustomerScreen'
 import SupplierScreen from './components/SupplierScreen'
 import WastageScreen from './components/WastageScreen'
+import NetworkStatus from './components/NetworkStatus' // 👈 Import NetworkStatus
 
 // Admin Screens
 import StockScreen from './components/StockScreen'
@@ -22,7 +23,7 @@ import AnalyticsScreen from './components/AnalyticsScreen'
 import RawMaterialScreen from './components/RawMaterialScreen'
 import DataExportScreen from './components/DataExportScreen' 
 import AuditLogScreen from './components/AuditLogScreen'
-import BalanceSheetScreen from './components/BalanceSheetScreen' 
+import BalanceSheetScreen from './components/BalanceSheetScreen' // 👈 Import BalanceSheet
 
 function App() {
   const [userRole, setUserRole] = useState(null)
@@ -58,16 +59,14 @@ function App() {
 
   return (
     <ChakraProvider>
-      {/* ✨ THE FIX: 
-         1. Box: Keeps the gray background covering the whole screen.
-         2. Container: centerContent={false} lets us handle layout manually.
-         3. mx="auto": FORCE horizontal centering.
-      */}
+      {/* 📡 OFFLINE BADGE: Sits on top of everything */}
+      <NetworkStatus /> 
+
       <Box minH="100vh" bg="gray.50">
         <Container 
           maxW="container.xl" 
           p={4} 
-          mx="auto" // 👈 THIS is the key to centering the container itself
+          mx="auto" 
           minH="100vh"
         >
           

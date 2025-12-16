@@ -13,6 +13,8 @@ import CustomerScreen from './components/CustomerScreen'
 import SupplierScreen from './components/SupplierScreen'
 import WastageScreen from './components/WastageScreen'
 import NetworkStatus from './components/NetworkStatus' // 👈 Import NetworkStatus
+import SystemToolsScreen from './components/SystemToolsScreen'
+import MonthlyReportScreen from './components/MonthlyReportScreen'
 
 // Admin Screens
 import StockScreen from './components/StockScreen'
@@ -100,6 +102,9 @@ function App() {
               {currentScreen === 'suppliers' && <SupplierScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'wastage' && <WastageScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'balance_sheet' && <BalanceSheetScreen onBack={() => setCurrentScreen('dashboard')} />}
+              {currentScreen === 'system_tools' && <SystemToolsScreen onBack={() => setCurrentScreen('dashboard')} />}
+                
+              
             </>
           )}
 

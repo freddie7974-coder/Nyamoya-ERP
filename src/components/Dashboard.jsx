@@ -1,11 +1,10 @@
 // src/components/Dashboard.jsx
 import { useState, useEffect } from 'react'
-import { Box, SimpleGrid, Stat, StatLabel, StatNumber, StatHelpText, Heading, Text, Button, VStack, HStack, Badge, Spinner, Alert, AlertIcon, AlertTitle, AlertDescription, IconButton } from '@chakra-ui/react'
+import { Box, SimpleGrid, Stat, StatLabel, StatNumber, StatHelpText, Heading, Text, Button, VStack, HStack, Badge, Spinner, Alert, AlertIcon, AlertTitle, AlertDescription } from '@chakra-ui/react'
 import { collection, getDocs } from 'firebase/firestore'
-import { signOut } from 'firebase/auth' // 👈 Import SignOut
-import { db, auth } from '../firebase' // 👈 Import Auth
+import { signOut } from 'firebase/auth' 
+import { db, auth } from '../firebase' 
 
-// 👇 Accept onLogout prop
 export default function Dashboard({ userRole, onNavigate, onLogout }) {
   const [stats, setStats] = useState({
     todaySales: 0,
@@ -20,12 +19,26 @@ export default function Dashboard({ userRole, onNavigate, onLogout }) {
 
   const fetchDashboardData = async () => {
     try {
-      // 1. Calculate Sales
+      // 1. Get Date Range for THIS MONTH ONLY 📅
+      const now = new Date()
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1) // 1st day of current month
+      
+      // 2. Calculate Sales
       const salesSnap = await getDocs(collection(db, "sales"))
       let total = 0
-      salesSnap.forEach(doc => total += doc.data().totalAmount || 0)
+      
+      salesSnap.forEach(doc => {
+        const data = doc.data()
+        // Convert Firestore Timestamp to Date
+        const saleDate = data.createdAt ? data.createdAt.toDate() : new Date()
+        
+        // Only count if sale happened this month
+        if (saleDate >= startOfMonth) {
+          total += data.totalAmount || 0
+        }
+      })
 
-      // 2. Low Stock Alerts
+      // 3. Low Stock Alerts
       const lowItems = []
       const rawSnap = await getDocs(collection(db, "raw_materials"))
       rawSnap.forEach(doc => {
@@ -49,8 +62,8 @@ export default function Dashboard({ userRole, onNavigate, onLogout }) {
 
   // 🚪 LOGOUT FUNCTION
   const handleSignOut = async () => {
-    await signOut(auth) // Tell Firebase to close session
-    onLogout() // Tell App.jsx to switch screens
+    await signOut(auth) 
+    onLogout() 
   }
 
   if (loading) return <Box p={10} textAlign="center"><Spinner size="xl" /></Box>
@@ -67,7 +80,6 @@ export default function Dashboard({ userRole, onNavigate, onLogout }) {
           <Badge colorScheme="teal" p={2} borderRadius="md">
             {new Date().toLocaleDateString()}
           </Badge>
-          {/* 🚪 LOGOUT BUTTON */}
           <Button size="sm" colorScheme="red" variant="outline" onClick={handleSignOut}>
             Logout
           </Button>
@@ -100,9 +112,9 @@ export default function Dashboard({ userRole, onNavigate, onLogout }) {
       <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6} mb={8}>
         <Box p={6} bg="white" shadow="md" borderRadius="xl" borderLeft="4px solid" borderColor="teal.500">
           <Stat>
-            <StatLabel fontSize="lg" color="gray.500">Total Revenue</StatLabel>
+            <StatLabel fontSize="lg" color="gray.500">Revenue (This Month)</StatLabel>
             <StatNumber fontSize="3xl" fontWeight="800" color="teal.600">TZS {stats.todaySales.toLocaleString()}</StatNumber>
-            <StatHelpText>Lifetime Sales</StatHelpText>
+            <StatHelpText>Resets on 1st of month</StatHelpText>
           </Stat>
         </Box>
         <Box p={6} bg="white" shadow="md" borderRadius="xl" borderLeft="4px solid" borderColor="blue.500">
@@ -130,13 +142,19 @@ export default function Dashboard({ userRole, onNavigate, onLogout }) {
             <MenuCard label="Raw Materials" color="green" icon="🥜" onClick={() => onNavigate('raw_materials')} />
             <MenuCard label="Product Catalogue" color="purple" icon="📦" onClick={() => onNavigate('stock')} />
             <MenuCard label="Expenses" color="red" icon="💸" onClick={() => onNavigate('expense')} />
+            
+            {/* 👇 UPDATED: Added Archives Button and moved Analytics */}
             <MenuCard label="Analytics & Profit" color="purple" icon="📈" onClick={() => onNavigate('analytics')} />
+            <MenuCard label="Monthly Archives" color="teal" icon="📅" onClick={() => onNavigate('monthly_report')} />
+
             <MenuCard label="Customers (CRM)" color="blue" icon="🤝" onClick={() => onNavigate('customers')} />
             <MenuCard label="Suppliers" color="orange" icon="🚛" onClick={() => onNavigate('suppliers')} />
             <MenuCard label="Report Wastage" color="red" icon="🗑️" onClick={() => onNavigate('wastage')} />
             <MenuCard label="Audit Logs" color="blackAlpha" icon="🛡️" onClick={() => onNavigate('audit')} />
             <MenuCard label="Export Data" color="gray" icon="💾" onClick={() => onNavigate('export')} />
             <MenuCard label="Balance Sheet" color="cyan" icon="⚖️" onClick={() => onNavigate('balance_sheet')} />
+            <MenuCard label="System Tools" color="red" icon="🛠️" onClick={() => onNavigate('system_tools')} />
+            <MenuCard label="Monthly Archives" color="teal" icon="📅" onClick={() => onNavigate('monthly_report')} />
           </SimpleGrid>
         </>
       )}

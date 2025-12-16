@@ -1,186 +1,154 @@
 // src/components/AnalyticsScreen.jsx
 import { useState, useEffect } from 'react'
-import { Box, Button, SimpleGrid, Text, Heading, HStack, Stat, StatLabel, StatNumber, StatHelpText, StatArrow, Spinner, Divider, Card, CardBody, VStack, Progress, Badge } from '@chakra-ui/react'
-import { collection, getDocs, query, orderBy } from 'firebase/firestore'
+import { Box, Button, Heading, Text, SimpleGrid, Stat, StatLabel, StatNumber, StatArrow, HStack, VStack, Spinner, Flex, Tooltip } from '@chakra-ui/react'
+import { collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebase'
 
 export default function AnalyticsScreen({ onBack }) {
   const [loading, setLoading] = useState(true)
-  
-  // Financial Data
-  const [totalRevenue, setTotalRevenue] = useState(0)
-  const [totalCOGS, setTotalCOGS] = useState(0)
-  const [totalExpenses, setTotalExpenses] = useState(0)
-  
-  // Transaction Counts
-  const [totalSalesCount, setTotalSalesCount] = useState(0)
-  const [expenseCount, setExpenseCount] = useState(0)
+  const [trendData, setTrendData] = useState([])
+  const [summary, setSummary] = useState({ totalRev: 0, growth: 0 })
 
   useEffect(() => {
-    fetchFinancials()
+    calculateTrends()
   }, [])
 
-  const fetchFinancials = async () => {
+  const calculateTrends = async () => {
     try {
-      // 1. Fetch Sales (Revenue & COGS)
       const salesSnap = await getDocs(collection(db, "sales"))
-      let revenue = 0
-      let cogs = 0
-      let salesCount = 0
+      const salesByMonth = {} // Format: { "Jan 2025": 50000, "Feb 2025": 75000 }
 
+      let totalRevenue = 0
+
+      // 1. Group Sales by Month
       salesSnap.forEach(doc => {
         const data = doc.data()
-        revenue += data.totalAmount || 0
-        // 🛡️ Safety: If old sales don't have cost, assume 0 (or estimation)
-        cogs += data.totalCost || 0 
-        salesCount++
+        const amount = data.totalAmount || 0
+        const date = data.createdAt ? data.createdAt.toDate() : new Date()
+        
+        // Create Key: e.g., "Dec 2025"
+        const monthKey = date.toLocaleString('default', { month: 'short', year: 'numeric' })
+        
+        if (!salesByMonth[monthKey]) salesByMonth[monthKey] = 0
+        salesByMonth[monthKey] += amount
+        totalRevenue += amount
       })
 
-      // 2. Fetch Expenses (Rent, Salary, etc.)
-      const expensesSnap = await getDocs(collection(db, "expenses"))
-      let expenses = 0
-      let expCount = 0
+      // 2. Convert to Array for Sorting
+      // We want the last 6 months specifically
+      const monthsOrder = []
+      const today = new Date()
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(today.getFullYear(), today.getMonth() - i, 1)
+        const key = d.toLocaleString('default', { month: 'short', year: 'numeric' })
+        monthsOrder.push(key)
+      }
 
-      expensesSnap.forEach(doc => {
-        const data = doc.data()
-        expenses += data.amount || 0
-        expCount++
-      })
+      const finalData = monthsOrder.map(key => ({
+        month: key,
+        amount: salesByMonth[key] || 0
+      }))
 
-      setTotalRevenue(revenue)
-      setTotalCOGS(cogs)
-      setTotalExpenses(expenses)
-      setTotalSalesCount(salesCount)
-      setExpenseCount(expCount)
+      // 3. Calculate Growth (Last Month vs This Month)
+      const thisMonth = finalData[5].amount
+      const lastMonth = finalData[4].amount
+      let growthPercent = 0
+      if (lastMonth > 0) {
+        growthPercent = ((thisMonth - lastMonth) / lastMonth) * 100
+      } else if (thisMonth > 0) {
+        growthPercent = 100 // 100% growth if started from 0
+      }
+
+      setTrendData(finalData)
+      setSummary({ totalRev: totalRevenue, growth: growthPercent })
 
     } catch (error) {
-      console.error("Error fetching analytics:", error)
+      console.error(error)
     } finally {
       setLoading(false)
     }
   }
 
-  // 🧮 CALCULATIONS
-  const grossProfit = totalRevenue - totalCOGS
-  const netProfit = grossProfit - totalExpenses
-  
-  // Profit Margin Calculation (Avoid division by zero)
-  const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0
-  const netMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0
+  // Find max value to scale the bars graphically
+  const maxVal = Math.max(...trendData.map(d => d.amount)) || 1
 
   if (loading) return <Box p={10} textAlign="center"><Spinner size="xl" /></Box>
 
   return (
     <Box p={4} maxW="1000px" mx="auto">
-      <HStack mb={8}>
-        <Button onClick={onBack} variant="ghost">← Back</Button>
-        <Heading size="md" color="purple.600">Financial Performance 📈</Heading>
-      </HStack>
+      <Button onClick={onBack} mb={6}>← Back to Dashboard</Button>
+      <Heading mb={2} color="purple.700">Business Trends 📈</Heading>
+      <Text color="gray.500" mb={8}>6-Month Performance Overview</Text>
 
-      {/* 1. HERO SECTION: NET PROFIT */}
-      <Box 
-        bg={netProfit >= 0 ? "green.500" : "red.500"} 
-        p={6} 
-        borderRadius="xl" 
-        color="white" 
-        mb={8} 
-        shadow="lg"
-        textAlign="center"
-      >
-        <Text fontSize="lg" fontWeight="medium" opacity={0.9}>NET PROFIT (Real Cash)</Text>
-        <Heading size="3xl" my={2}>TZS {netProfit.toLocaleString()}</Heading>
-        <Text fontSize="sm" opacity={0.8}>
-          {netProfit >= 0 ? "You are making money! 🤑" : "You are currently losing money. 📉"}
-        </Text>
+      {/* SUMMARY CARDS */}
+      <SimpleGrid columns={{ base: 1, md: 3 }} spacing={6} mb={10}>
+        <Box p={5} bg="white" shadow="md" borderRadius="xl" borderTop="4px solid" borderColor="purple.500">
+          <Stat>
+            <StatLabel>Lifetime Revenue</StatLabel>
+            <StatNumber>TZS {summary.totalRev.toLocaleString()}</StatNumber>
+          </Stat>
+        </Box>
+        <Box p={5} bg="white" shadow="md" borderRadius="xl" borderTop="4px solid" borderColor={summary.growth >= 0 ? "green.500" : "red.500"}>
+          <Stat>
+            <StatLabel>Growth (vs Last Month)</StatLabel>
+            <StatNumber>
+              <StatArrow type={summary.growth >= 0 ? 'increase' : 'decrease'} />
+              {summary.growth.toFixed(1)}%
+            </StatNumber>
+            <Text fontSize="xs" color="gray.500">Month-over-Month trend</Text>
+          </Stat>
+        </Box>
+      </SimpleGrid>
+
+      {/* VISUAL BAR CHART */}
+      <Box bg="white" p={8} borderRadius="2xl" shadow="lg">
+        <Heading size="md" mb={6}>Revenue History (Last 6 Months)</Heading>
+        
+        <Flex 
+          alignItems="flex-end" 
+          justifyContent="space-between" 
+          height="300px" 
+          w="100%" 
+          borderBottom="2px solid" 
+          borderColor="gray.200"
+          pb={2}
+        >
+          {trendData.map((item, index) => {
+            // Calculate height percentage (max 100%)
+            const height = (item.amount / maxVal) * 100
+            
+            return (
+              <VStack key={index} spacing={2} flex={1} alignItems="center">
+                {/* TOOLTIP ON HOVER TO SEE EXACT NUMBER */}
+                <Tooltip label={`TZS ${item.amount.toLocaleString()}`} hasArrow placement='top'>
+                  <Box 
+                    w={{ base: "30px", md: "50px" }}
+                    h={`${height}%`} 
+                    bgGradient="linear(to-t, purple.500, cyan.400)"
+                    borderRadius="md"
+                    transition="all 0.3s"
+                    _hover={{ opacity: 0.8, transform: "scaleY(1.05)" }}
+                    minH={item.amount > 0 ? "4px" : "0"}
+                  />
+                </Tooltip>
+                <Text fontSize="xs" fontWeight="bold" color="gray.600" transform={{ base: "rotate(-45deg)", md: "none" }} mt={2}>
+                  {item.month}
+                </Text>
+              </VStack>
+            )
+          })}
+        </Flex>
       </Box>
 
-      {/* 2. KEY METRICS GRID */}
-      <SimpleGrid columns={{ base: 1, md: 3 }} spacing={6} mb={10}>
-        
-        {/* REVENUE CARD */}
-        <Card>
-          <CardBody>
-            <Stat>
-              <StatLabel color="gray.500">Total Revenue (Sales)</StatLabel>
-              <StatNumber color="blue.600">TZS {totalRevenue.toLocaleString()}</StatNumber>
-              <StatHelpText>
-                <StatArrow type="increase" />
-                {totalSalesCount} Transactions
-              </StatHelpText>
-            </Stat>
-          </CardBody>
-        </Card>
-
-        {/* COGS CARD */}
-        <Card>
-          <CardBody>
-            <Stat>
-              <StatLabel color="gray.500">Cost of Goods Sold</StatLabel>
-              <StatNumber color="orange.500">TZS {totalCOGS.toLocaleString()}</StatNumber>
-              <StatHelpText>
-                Raw Materials & Production
-              </StatHelpText>
-            </Stat>
-            <Box mt={2}>
-              <Text fontSize="xs" color="gray.500" mb={1}>Cost Ratio ({100 - Math.round(grossMargin)}%)</Text>
-              <Progress value={100 - grossMargin} colorScheme="orange" size="xs" borderRadius="full" />
-            </Box>
-          </CardBody>
-        </Card>
-
-        {/* EXPENSES CARD */}
-        <Card>
-          <CardBody>
-            <Stat>
-              <StatLabel color="gray.500">Operating Expenses</StatLabel>
-              <StatNumber color="red.500">TZS {totalExpenses.toLocaleString()}</StatNumber>
-              <StatHelpText>
-                Rent, Utilities, Salaries
-              </StatHelpText>
-            </Stat>
-            <Box mt={2}>
-              <Text fontSize="xs" color="gray.500" mb={1}>{expenseCount} Records Logged</Text>
-              <Progress value={(totalExpenses / totalRevenue) * 100} colorScheme="red" size="xs" borderRadius="full" />
-            </Box>
-          </CardBody>
-        </Card>
-      </SimpleGrid>
-
-      <Divider mb={8} />
-
-      {/* 3. PROFITABILITY BREAKDOWN */}
-      <Heading size="sm" mb={4} color="gray.600">Profitability Health</Heading>
-      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
-        
-        {/* Gross Profit Box */}
-        <Box p={5} borderWidth="1px" borderRadius="lg" bg="white">
-          <HStack justifyContent="space-between" mb={2}>
-            <Text fontWeight="bold" color="gray.700">Gross Profit</Text>
-            <Badge colorScheme="green" fontSize="0.8em">{Math.round(grossMargin)}% Margin</Badge>
-          </HStack>
-          <Heading size="lg" color="green.600">TZS {grossProfit.toLocaleString()}</Heading>
-          <Text fontSize="sm" color="gray.500" mt={2}>
-            (Sales - Cost of Jars). This covers your factory efficiency.
-          </Text>
-        </Box>
-
-        {/* Net Profit Box */}
-        <Box p={5} borderWidth="1px" borderRadius="lg" bg="white">
-          <HStack justifyContent="space-between" mb={2}>
-            <Text fontWeight="bold" color="gray.700">Net Profit</Text>
-            <Badge colorScheme={netMargin > 15 ? "green" : netMargin > 0 ? "yellow" : "red"} fontSize="0.8em">
-              {Math.round(netMargin)}% Margin
-            </Badge>
-          </HStack>
-          <Heading size="lg" color={netProfit >= 0 ? "teal.600" : "red.500"}>
-            TZS {netProfit.toLocaleString()}
-          </Heading>
-          <Text fontSize="sm" color="gray.500" mt={2}>
-            (Gross Profit - Expenses). This is your take-home amount.
-          </Text>
-        </Box>
-
-      </SimpleGrid>
+      <Box mt={8} p={4} bg="blue.50" borderRadius="lg">
+        <Heading size="sm" color="blue.700">💡 Business Insight</Heading>
+        <Text fontSize="sm" mt={2}>
+          {summary.growth > 0 
+            ? "Great job! Your business is trending upwards compared to last month. Keep pushing sales!"
+            : "Sales have dipped slightly this month. Check your 'Monthly Archives' to see if expenses were higher or sales volume dropped."
+          }
+        </Text>
+      </Box>
     </Box>
   )
 }

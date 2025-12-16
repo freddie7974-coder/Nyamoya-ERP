@@ -1,7 +1,14 @@
 // src/components/SalesScreen.jsx
 import { useState, useEffect } from 'react'
-import { Box, Button, SimpleGrid, Text, HStack, Heading, useToast, Spinner, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, VStack, Input, Select } from '@chakra-ui/react'
-import { collection, getDocs, addDoc, serverTimestamp, doc, updateDoc, increment, query, orderBy } from 'firebase/firestore'
+import { 
+  Box, Button, SimpleGrid, Text, HStack, Heading, useToast, Spinner, 
+  Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, 
+  useDisclosure, VStack, Input, Select 
+} from '@chakra-ui/react'
+import { 
+  collection, getDocs, addDoc, serverTimestamp, doc, updateDoc, 
+  increment, query, orderBy 
+} from 'firebase/firestore'
 import { db } from '../firebase'
 import { logAction } from '../utils/logger'
 
@@ -25,25 +32,38 @@ export default function SalesScreen({ onBack }) {
   
   const toast = useToast()
 
-  // 1. FETCH DATA (Products & Customers)
+  // 1. FETCH DATA (Products & Customers) - FIXED & ROBUST 🛠️
   useEffect(() => {
     const fetchData = async () => {
       try {
+        setLoading(true)
+
         // A. Fetch Inventory
         const prodSnap = await getDocs(collection(db, "inventory"))
         const prodList = []
-        prodSnap.forEach((doc) => prodList.push({ id: doc.id, ...doc.data() })) // This already grabs everything ✅
+        prodSnap.forEach((doc) => {
+            const data = doc.data()
+            // Only add valid products
+            if (data.name) {
+                prodList.push({ id: doc.id, ...data })
+            }
+        })
         setProducts(prodList)
 
         // B. Fetch Customers (Alphabetical)
         const q = query(collection(db, "customers"), orderBy("name"))
         const custSnap = await getDocs(q)
-        constcustList = []
+        const custList = []
         custSnap.forEach((doc) => custList.push({ id: doc.id, ...doc.data() }))
         setCustomers(custList)
 
       } catch (error) {
-        toast({ title: "Error loading data", status: "error" })
+        console.error("DETAILED ERROR:", error) // 👈 Check Console if this happens!
+        toast({ 
+            title: "Error loading data", 
+            description: error.message, // Shows the real reason
+            status: "error" 
+        })
       } finally {
         setLoading(false)
       }
@@ -69,25 +89,26 @@ export default function SalesScreen({ onBack }) {
 
   const totalAmount = cart.reduce((sum, item) => sum + (item.price || 0), 0)
 
-  // 2. CHECKOUT (Now updates Customer Stats!)
+  // 2. CHECKOUT (Updates Customer Stats + Stock)
   const handleCheckout = async () => {
     if (cart.length === 0) return
 
     setIsSubmitting(true)
     try {
-      // A. Save Sale (UPDATED to include Cost & Profit 💰)
+      // A. Save Sale (Includes Cost & Profit 💰)
       const saleRef = await addDoc(collection(db, "sales"), {
         items: cart.map(item => ({
           name: item.name,
           price: item.price,
-          cost: item.averageUnitCost || 0 // 👈 CAPTURING THE COST!
+          cost: item.averageUnitCost || 0 
         })),
         totalAmount: totalAmount,
-        totalCost: cart.reduce((sum, item) => sum + (item.averageUnitCost || 0), 0), // 👈 Total Cost of Sale
+        totalCost: cart.reduce((sum, item) => sum + (item.averageUnitCost || 0), 0), 
         itemCount: cart.length,
         customer: customerName,
         customerId: selectedCustomerId || null,
-        date: serverTimestamp(),
+        createdAt: serverTimestamp(), // Changed from 'date' to 'createdAt' for consistency
+        date: serverTimestamp() // Keeping both for safety with old code
       })
 
       // B. Log the Action
@@ -99,7 +120,7 @@ export default function SalesScreen({ onBack }) {
         await updateDoc(productRef, { currentStock: increment(-1) })
       }
 
-      // D. Update Customer Stats (The CRM Magic ✨)
+      // D. Update Customer Stats (CRM)
       if (selectedCustomerId) {
         const customerRef = doc(db, 'customers', selectedCustomerId)
         await updateDoc(customerRef, { 
@@ -122,8 +143,8 @@ export default function SalesScreen({ onBack }) {
       onOpen() 
 
     } catch (error) {
-      console.error("Error:", error)
-      toast({ title: "Error processing sale", status: "error" })
+      console.error("Checkout Error:", error)
+      toast({ title: "Error processing sale", description: error.message, status: "error" })
     } finally {
       setIsSubmitting(false)
     }
@@ -201,7 +222,7 @@ export default function SalesScreen({ onBack }) {
         <Box w="70px" />
       </HStack>
 
-      {/* 👇 NEW: Customer Dropdown Selection */}
+      {/* Customer Dropdown */}
       <Box mb={4}>
         <Text mb={2} fontWeight="bold" fontSize="sm">Select Customer</Text>
         <Select 
@@ -217,7 +238,8 @@ export default function SalesScreen({ onBack }) {
             </option>
           ))}
         </Select>
-        {/* Fallback Input if they want to type a name manually */}
+        
+        {/* Fallback Input */}
         {!selectedCustomerId && (
           <Input 
             mt={2}
@@ -229,6 +251,7 @@ export default function SalesScreen({ onBack }) {
         )}
       </Box>
 
+      {/* Products Grid */}
       <SimpleGrid columns={2} spacing={4} mb={24}>
         {products.map((product) => (
           <Button
@@ -246,8 +269,14 @@ export default function SalesScreen({ onBack }) {
             <Text>TZS {product.price ? product.price.toLocaleString() : '0'}</Text>
           </Button>
         ))}
+        {products.length === 0 && (
+            <Box gridColumn="span 2" textAlign="center" py={10} color="gray.500">
+                No products found. Add items in Stock Screen first.
+            </Box>
+        )}
       </SimpleGrid>
 
+      {/* Footer / Checkout */}
       <Box position="fixed" bottom="0" left="0" right="0" bg="white" p={4} borderTop="1px solid" borderColor="gray.200" boxShadow="lg">
         <HStack justifyContent="space-between" mb={4}>
           <Text fontSize="xl" fontWeight="bold">Total:</Text>
@@ -258,6 +287,7 @@ export default function SalesScreen({ onBack }) {
         </Button>
       </Box>
 
+      {/* Success Modal */}
       <Modal isOpen={isOpen} onClose={() => { onClose(); onBack(); }} isCentered size="sm">
         <ModalOverlay />
         <ModalContent>

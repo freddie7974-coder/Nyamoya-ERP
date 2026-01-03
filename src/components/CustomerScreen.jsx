@@ -1,7 +1,12 @@
 // src/components/CustomerScreen.jsx
 import { useState, useEffect } from 'react'
-import { Box, Button, Table, Thead, Tbody, Tr, Th, Td, Heading, HStack, Input, useToast, Spinner, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, VStack, Text, Badge } from '@chakra-ui/react'
-import { collection, getDocs, addDoc, serverTimestamp, query, orderBy } from 'firebase/firestore'
+import { 
+  Box, Button, Table, Thead, Tbody, Tr, Th, Td, Heading, HStack, Input, 
+  useToast, Spinner, Modal, ModalOverlay, ModalContent, ModalHeader, 
+  ModalBody, ModalFooter, useDisclosure, VStack, Text, Badge, IconButton, Tooltip 
+} from '@chakra-ui/react'
+import { DeleteIcon, EditIcon } from '@chakra-ui/icons' // Make sure you have @chakra-ui/icons installed
+import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, deleteDoc, doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 
 export default function CustomerScreen({ onBack }) {
@@ -13,6 +18,10 @@ export default function CustomerScreen({ onBack }) {
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [location, setLocation] = useState('')
+  
+  // Edit Mode State
+  const [isEditing, setIsEditing] = useState(false)
+  const [currentCustomerId, setCurrentCustomerId] = useState(null)
 
   const toast = useToast()
 
@@ -37,32 +46,73 @@ export default function CustomerScreen({ onBack }) {
     }
   }
 
-  // 2. Add New Customer
-  const handleAddCustomer = async () => {
+  // Helper: Open Modal for Adding
+  const openAddModal = () => {
+    setIsEditing(false)
+    setName('')
+    setPhone('')
+    setLocation('')
+    onOpen()
+  }
+
+  // Helper: Open Modal for Editing
+  const openEditModal = (customer) => {
+    setIsEditing(true)
+    setCurrentCustomerId(customer.id)
+    setName(customer.name)
+    setPhone(customer.phone)
+    setLocation(customer.location)
+    onOpen()
+  }
+
+  // 2. Save (Add or Update)
+  const handleSave = async () => {
     if (!name || !phone) {
       toast({ title: "Name and Phone are required", status: "warning" })
       return
     }
 
     try {
-      await addDoc(collection(db, "customers"), {
-        name,
-        phone,
-        location: location || 'Dar es Salaam',
-        totalSpent: 0, // We will track this later!
-        joinedDate: serverTimestamp()
-      })
+      if (isEditing) {
+        // UPDATE Existing Customer
+        const customerRef = doc(db, "customers", currentCustomerId)
+        await updateDoc(customerRef, {
+          name,
+          phone,
+          location: location || 'Dar es Salaam'
+        })
+        toast({ title: "Customer Updated! ✅", status: "success" })
+      } else {
+        // ADD New Customer
+        await addDoc(collection(db, "customers"), {
+          name,
+          phone,
+          location: location || 'Dar es Salaam',
+          totalSpent: 0, 
+          joinedDate: serverTimestamp()
+        })
+        toast({ title: "Customer Added! 🎉", status: "success" })
+      }
 
-      toast({ title: "Customer Added! 🎉", status: "success" })
-      setName('')
-      setPhone('')
-      setLocation('')
       onClose()
       fetchCustomers() // Refresh list
 
     } catch (error) {
       console.error(error)
-      toast({ title: "Error adding customer", status: "error" })
+      toast({ title: "Error saving customer", status: "error" })
+    }
+  }
+
+  // 3. Delete Customer
+  const handleDelete = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this customer?")) return
+
+    try {
+      await deleteDoc(doc(db, "customers", id))
+      toast({ title: "Customer Deleted", status: "info" })
+      fetchCustomers()
+    } catch (error) {
+      toast({ title: "Error deleting customer", status: "error" })
     }
   }
 
@@ -75,7 +125,7 @@ export default function CustomerScreen({ onBack }) {
           <Button onClick={onBack} variant="ghost">← Back</Button>
           <Heading size="md" color="blue.600">Customer Directory 👥</Heading>
         </HStack>
-        <Button colorScheme="blue" onClick={onOpen}>+ Add Customer</Button>
+        <Button colorScheme="blue" onClick={openAddModal}>+ Add Customer</Button>
       </HStack>
 
       <Box bg="white" shadow="md" borderRadius="xl" overflow="hidden">
@@ -87,6 +137,7 @@ export default function CustomerScreen({ onBack }) {
               <Th>Location</Th>
               <Th isNumeric>Total Spent</Th>
               <Th>Status</Th>
+              <Th>Actions</Th>
             </Tr>
           </Thead>
           <Tbody>
@@ -99,27 +150,50 @@ export default function CustomerScreen({ onBack }) {
                   TZS {(cust.totalSpent || 0).toLocaleString()}
                 </Td>
                 <Td>
-                  {/* Simple Logic: VIP if spent > 100k */}
                   {(cust.totalSpent || 0) > 100000 ? (
                     <Badge colorScheme="purple">VIP 👑</Badge>
                   ) : (
                     <Badge colorScheme="gray">New</Badge>
                   )}
                 </Td>
+                <Td>
+                  <HStack spacing={2}>
+                    <Tooltip label="Edit Customer">
+                      <IconButton 
+                        icon={<EditIcon />} 
+                        size="sm" 
+                        colorScheme="blue" 
+                        variant="outline"
+                        onClick={() => openEditModal(cust)}
+                        aria-label="Edit"
+                      />
+                    </Tooltip>
+                    <Tooltip label="Delete Customer">
+                      <IconButton 
+                        icon={<DeleteIcon />} 
+                        size="sm" 
+                        colorScheme="red" 
+                        variant="outline"
+                        onClick={() => handleDelete(cust.id)}
+                        aria-label="Delete"
+                      />
+                    </Tooltip>
+                  </HStack>
+                </Td>
               </Tr>
             ))}
             {customers.length === 0 && (
-              <Tr><Td colSpan={5} textAlign="center" py={10}>No customers yet. Add your first one!</Td></Tr>
+              <Tr><Td colSpan={6} textAlign="center" py={10}>No customers yet. Add your first one!</Td></Tr>
             )}
           </Tbody>
         </Table>
       </Box>
 
-      {/* Add Customer Modal */}
+      {/* Add/Edit Customer Modal */}
       <Modal isOpen={isOpen} onClose={onClose} isCentered>
         <ModalOverlay />
         <ModalContent>
-          <ModalHeader>Add New Customer</ModalHeader>
+          <ModalHeader>{isEditing ? "Edit Customer" : "Add New Customer"}</ModalHeader>
           <ModalBody>
             <VStack spacing={4}>
               <Box w="100%">
@@ -138,7 +212,9 @@ export default function CustomerScreen({ onBack }) {
           </ModalBody>
           <ModalFooter>
             <Button variant="ghost" mr={3} onClick={onClose}>Cancel</Button>
-            <Button colorScheme="blue" onClick={handleAddCustomer}>Save Customer</Button>
+            <Button colorScheme="blue" onClick={handleSave}>
+              {isEditing ? "Update Customer" : "Save Customer"}
+            </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>

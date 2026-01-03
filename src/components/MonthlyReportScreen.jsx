@@ -130,7 +130,7 @@ export default function MonthlyReportScreen({ onBack }) {
     
     doc.setTextColor(255, 255, 255)
     doc.setFontSize(22)
-    doc.text("Nyamoya ERP", 14, 20)
+    doc.text("Nyamoya Enterprises", 14, 20)
     doc.setFontSize(14)
     doc.text("Monthly Performance Report", 14, 30)
     

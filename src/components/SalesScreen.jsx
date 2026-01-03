@@ -173,7 +173,7 @@ export default function SalesScreen({ onBack }) {
       doc.text("NYAMOYA ENTERPRISES", 14, 20)
       doc.setFontSize(12)
       doc.text("Quality Peanut Butter", 14, 28)
-      doc.text("Phone: +255 123 456 789", 14, 34)
+      doc.text("Phone: +255 754 614 669", 14, 34)
 
       doc.setFontSize(16)
       doc.text("INVOICE", 140, 20)

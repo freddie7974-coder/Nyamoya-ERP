@@ -12,6 +12,8 @@ export default function ProductionScreen({ onBack }) {
 
   const [selectedProduct, setSelectedProduct] = useState('')
   const [batchSize, setBatchSize] = useState('')
+  
+  // ✅ CHANGED: Batch Number is still random by default, but you can now edit it.
   const [batchNumber, setBatchNumber] = useState(`B-${Math.floor(Math.random() * 10000)}`)
   
   const [selectedMaterialId, setSelectedMaterialId] = useState('')
@@ -86,7 +88,7 @@ export default function ProductionScreen({ onBack }) {
       const currentData = productSnap.data()
       
       const currentStock = currentData.currentStock || 0
-      const currentAvgCost = currentData.averageUnitCost || 0 // This might be 0 initially
+      const currentAvgCost = currentData.averageUnitCost || 0 
 
       // 🧮 Weighted Average Formula
       const totalValueOld = currentStock * currentAvgCost
@@ -100,7 +102,7 @@ export default function ProductionScreen({ onBack }) {
       // 2. Update Inventory (Stock + Cost)
       await updateDoc(productRef, { 
         currentStock: totalNewStock,
-        averageUnitCost: newAverageUnitCost // Saving the new cost!
+        averageUnitCost: newAverageUnitCost 
       })
 
       // 3. Deduct Raw Materials
@@ -111,7 +113,7 @@ export default function ProductionScreen({ onBack }) {
 
       // 4. Save Batch Log
       await addDoc(collection(db, "production_log"), {
-        batchNumber,
+        batchNumber, // Saves whatever you typed in the input
         product: products.find(p => p.id === selectedProduct)?.name,
         quantityProduced: qtyProduced,
         ingredients: ingredientsUsed,
@@ -121,16 +123,17 @@ export default function ProductionScreen({ onBack }) {
         user: "Staff"
       })
 
-      await logAction('Staff', 'Production', `Produced ${qtyProduced} units. Cost updated to TZS ${Math.round(newAverageUnitCost)}/unit`)
+      await logAction('Staff', 'Production', `Produced ${qtyProduced} units (Batch: ${batchNumber}).`)
 
       toast({ 
-        title: "Production Complete & Cost Updated! 💰", 
-        description: `New Avg Cost: TZS ${Math.round(newAverageUnitCost)}/unit`,
+        title: "Production Complete! 🏭", 
+        description: `Batch ${batchNumber} saved.`,
         status: "success"
       })
 
       setIngredientsUsed([])
       setBatchSize('')
+      // Generate a new random batch ID for the next one
       setBatchNumber(`B-${Math.floor(Math.random() * 10000)}`)
 
     } catch (error) {
@@ -153,7 +156,13 @@ export default function ProductionScreen({ onBack }) {
           <Heading size="sm">1. Batch Details</Heading>
           <Box>
             <Text fontSize="sm" fontWeight="bold">Batch Number</Text>
-            <Input value={batchNumber} isReadOnly bg="gray.100" />
+            {/* ✅ FIXED: Added onChange and removed isReadOnly */}
+            <Input 
+              value={batchNumber} 
+              onChange={(e) => setBatchNumber(e.target.value)}
+              bg="white" 
+              placeholder="e.g. B-1025"
+            />
           </Box>
           <Box>
             <Text fontSize="sm" fontWeight="bold">Product to Make</Text>
@@ -190,12 +199,12 @@ export default function ProductionScreen({ onBack }) {
           </Box>
 
           <Box bg="orange.50" p={4} borderRadius="md">
-             <HStack justifyContent="space-between">
-               <Text fontSize="sm">Est. Unit Cost:</Text>
-               <Text fontWeight="bold" color="green.600">
-                 TZS {batchSize > 0 ? Math.round(costPerUnit).toLocaleString() : '0'}
-               </Text>
-             </HStack>
+              <HStack justifyContent="space-between">
+                <Text fontSize="sm">Est. Unit Cost:</Text>
+                <Text fontWeight="bold" color="green.600">
+                  TZS {batchSize > 0 ? Math.round(costPerUnit).toLocaleString() : '0'}
+                </Text>
+              </HStack>
           </Box>
 
           <Button colorScheme="orange" size="lg" onClick={handleProduce} isDisabled={ingredientsUsed.length === 0}>
@@ -205,4 +214,4 @@ export default function ProductionScreen({ onBack }) {
       </SimpleGrid>
     </Box>
   )
-}
+}   

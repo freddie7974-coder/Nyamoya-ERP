@@ -1,7 +1,7 @@
 // src/components/LoginScreen.jsx
 import { useState } from 'react'
-import { Box, Button, VStack, Heading, Text, Input, useToast, Container, Alert, AlertIcon, Divider } from '@chakra-ui/react'
-// ✅ IMPORTED: signInWithEmailAndPassword
+// ✅ FIXED: Added HStack to the imports below
+import { Box, Button, VStack, Heading, Text, Input, useToast, Container, Alert, AlertIcon, Divider, HStack } from '@chakra-ui/react'
 import { signInWithPopup, signInWithEmailAndPassword } from 'firebase/auth'
 import { auth, googleProvider, db } from '../firebase'
 import { collection, query, where, getDocs } from 'firebase/firestore'
@@ -15,12 +15,11 @@ export default function LoginScreen({ onLogin }) {
 
   // 1. HELPER: Check Database for Role
   const checkUserRole = async (userEmail) => {
-    // ✅ FIXED: Now checks "allowed_users" to match HR Screen
     const q = query(collection(db, "allowed_users"), where("email", "==", userEmail))
     const querySnapshot = await getDocs(q)
 
     // Backdoor for YOU (The Boss)
-    if (userEmail === "freddie7974@gmail.com") { // <--- Make sure this matches your email exactly
+    if (userEmail === "freddie7974@gmail.com") { 
        onLogin('admin')
        return true
     }
@@ -57,7 +56,7 @@ export default function LoginScreen({ onLogin }) {
     }
   }
 
-  // 3. EMAIL/PASSWORD LOGIN (Now Real!)
+  // 3. EMAIL/PASSWORD LOGIN
   const handleEmailLogin = async () => {
     if (!email || !password) {
         setError("Please enter both email and password.")
@@ -67,16 +66,12 @@ export default function LoginScreen({ onLogin }) {
     setLoading(true)
     setError('')
     try {
-      // A. Check Firebase Auth (Is the password correct?)
       const userCredential = await signInWithEmailAndPassword(auth, email, password)
       const userEmail = userCredential.user.email
-
-      // B. Check Firestore (Is this person allowed?)
       await checkUserRole(userEmail)
       
     } catch (err) {
       console.error(err)
-      // Make error messages user-friendly
       if (err.code === 'auth/wrong-password') {
         setError("Incorrect password.")
       } else if (err.code === 'auth/user-not-found') {

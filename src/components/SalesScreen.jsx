@@ -7,7 +7,9 @@ import {
   NumberInput, NumberInputField, NumberInputStepper, NumberIncrementStepper, NumberDecrementStepper,
   SimpleGrid, Divider, Spinner, Flex
 } from '@chakra-ui/react'
-import { DeleteIcon, ArrowBackIcon, LockIcon, UnlockIcon } from '@chakra-ui/icons'
+import { DeleteIcon, ArrowBackIcon, LockIcon, UnlockIcon, DownloadIcon } from '@chakra-ui/icons'
+// We are adding a simple icon for generic share (using LinkIcon as placeholder or external library usually)
+import { ExternalLinkIcon, ChatIcon } from '@chakra-ui/icons' 
 import { collection, addDoc, getDocs, updateDoc, doc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import jsPDF from 'jspdf'
@@ -27,13 +29,16 @@ export default function SalesScreen({ onBack }) {
   
   // Mode State
   const [isCartonMode, setIsCartonMode] = useState(false)
-  const [clickMultiplier, setClickMultiplier] = useState(1) // <--- NEW: Defaults to 1
+  const [clickMultiplier, setClickMultiplier] = useState(1)
   
   // TOTAL & CALCULATION STATE
   const [isManualPrice, setIsManualPrice] = useState(false) 
   const [manualTotal, setManualTotal] = useState(0) 
   const [autoTotal, setAutoTotal] = useState(0)
   const [processing, setProcessing] = useState(false)
+
+  // Last Sale State (For Sharing)
+  const [lastSale, setLastSale] = useState(null)
   
   const toast = useToast()
 
@@ -64,18 +69,12 @@ export default function SalesScreen({ onBack }) {
     if (!isManualPrice) setManualTotal(calculated)
   }, [cart, isManualPrice])
 
-  // --- 3. ADD TO CART (UPDATED) ---
+  // --- 3. ADD TO CART ---
   const addToCart = (product) => {
-    // 1. Determine Unit Size (1 or 12)
     const sizeMultiplier = isCartonMode ? 12 : 1
-    
-    // 2. Determine "How Many clicks?" (The Multiplier)
     const quantityCount = parseInt(clickMultiplier) || 1
-
-    // 3. Final Quantity logic
     const totalQtyToAdd = sizeMultiplier * quantityCount
 
-    // Price Logic
     const rawPrice = product.sellingPrice !== undefined ? product.sellingPrice : (product.price || 0)
     const unitPrice = Number(rawPrice)
     const priceToAdd = unitPrice * totalQtyToAdd
@@ -100,19 +99,12 @@ export default function SalesScreen({ onBack }) {
       }
     })
     
-    // Feedback Message
-    const typeText = isCartonMode ? "Cartons" : "Units"
     toast({
-        title: `Added ${quantityCount} ${typeText} of ${product.name}`,
-        description: `Total: ${totalQtyToAdd} items`,
+        title: `Added ${totalQtyToAdd} items`,
         status: "success",
-        duration: 1000,
+        duration: 500,
         position: "top-right",
     })
-
-    // Optional: Reset multiplier back to 1 for safety? 
-    // Uncomment next line if you want it to reset after every click.
-    // setClickMultiplier(1) 
   }
 
   // --- 4. REMOVE FROM CART ---
@@ -120,7 +112,75 @@ export default function SalesScreen({ onBack }) {
     setCart(cart.filter((_, i) => i !== index))
   }
 
-  // --- 5. CHECKOUT ---
+  // --- 5. PDF GENERATION ---
+  const createAndDownloadPdf = (saleData, saleId) => {
+    const docPDF = new jsPDF()
+    docPDF.setFontSize(22)
+    docPDF.text("NYAMOYA ENTERPRISES", 14, 20)
+    docPDF.setFontSize(10)
+    docPDF.text(`Date: ${saleData.date}`, 14, 30)
+    docPDF.text(`Invoice #: ${saleId.slice(0, 8).toUpperCase()}`, 14, 36)
+    docPDF.text(`Customer: ${saleData.customerName}`, 14, 42)
+
+    docPDF.autoTable({
+      startY: 50,
+      head: [['Item', 'Qty', 'Total']],
+      body: saleData.items.map(item => [item.name, item.qty, item.price.toLocaleString()]),
+    })
+
+    const finalY = docPDF.lastAutoTable.finalY + 10
+    docPDF.setFontSize(14)
+    docPDF.text(`Total Paid: ${Number(saleData.totalAmount).toLocaleString()} TZS`, 14, finalY)
+
+    docPDF.save(`Invoice_${saleId}.pdf`)
+  }
+
+  // --- 6. WHATSAPP & SHARE GENERATOR ---
+  const generateShareText = (saleData, saleId) => {
+    let text = `🧾 *RECEIPT - NYAMOYA ENTERPRISES*\n`
+    text += `📅 Date: ${saleData.date}\n`
+    text += `👤 Customer: ${saleData.customerName}\n`
+    text += `🔢 Inv: ${saleId.slice(0, 6).toUpperCase()}\n\n`
+    text += `*ITEMS:*\n`
+    
+    saleData.items.forEach(item => {
+        text += `• ${item.name} (x${item.qty}) - ${item.price.toLocaleString()}/=\n`
+    })
+    
+    text += `\n💰 *TOTAL PAID: ${saleData.totalAmount.toLocaleString()} TZS*\n`
+    text += `✅ Paid via ${saleData.paymentMethod}\n\n`
+    text += `Thank you for your business!`
+    
+    return encodeURIComponent(text)
+  }
+
+  const shareToWhatsApp = () => {
+    if (!lastSale) return
+    const text = generateShareText(lastSale.data, lastSale.id)
+    window.open(`https://wa.me/?text=${text}`, '_blank')
+  }
+
+  const shareNative = async () => {
+    if (!lastSale) return
+    const textRaw = decodeURIComponent(generateShareText(lastSale.data, lastSale.id))
+    
+    if (navigator.share) {
+        try {
+            await navigator.share({
+                title: 'Nyamoya Receipt',
+                text: textRaw,
+            })
+        } catch (err) {
+            console.log('Error sharing', err)
+        }
+    } else {
+        // Fallback: Copy to clipboard
+        navigator.clipboard.writeText(textRaw)
+        toast({ title: "Receipt copied to clipboard!", status: "info" })
+    }
+  }
+
+  // --- 7. CHECKOUT ---
   const handleCheckout = async () => {
     if (cart.length === 0) return
     setProcessing(true)
@@ -148,7 +208,6 @@ export default function SalesScreen({ onBack }) {
       
       const docRef = await addDoc(collection(db, 'sales'), saleData)
 
-      // Deduct Stock
       for (const item of cart) {
         const productRef = doc(db, 'inventory', item.id)
         const snap = await getDoc(productRef)
@@ -158,18 +217,11 @@ export default function SalesScreen({ onBack }) {
         }
       }
 
-      // Generate Invoice
-      const docPDF = new jsPDF()
-      docPDF.setFontSize(22)
-      docPDF.text("NYAMOYA ENTERPRISES", 14, 20)
-      docPDF.setFontSize(10)
-      docPDF.text(`Invoice #: ${docRef.id.slice(0, 8).toUpperCase()}`, 14, 30)
-      docPDF.autoTable({
-        startY: 40,
-        head: [['Item', 'Qty', 'Total']],
-        body: saleData.items.map(item => [item.name, item.qty, item.price.toLocaleString()]),
-      })
-      docPDF.save(`Invoice_${docRef.id}.pdf`)
+      // Auto Download
+      createAndDownloadPdf(saleData, docRef.id)
+
+      // Set State for Sharing
+      setLastSale({ data: saleData, id: docRef.id })
 
       toast({ title: "Sale Completed!", status: "success" })
       
@@ -180,11 +232,11 @@ export default function SalesScreen({ onBack }) {
       setIsManualPrice(false)
       setCustomerName('')
       setSelectedCustomer('')
-      setClickMultiplier(1) // Reset multiplier on checkout
+      setClickMultiplier(1)
 
     } catch (error) {
       console.error(error)
-      toast({ title: "Sale Failed", status: "error" })
+      toast({ title: "Sale Failed", description: error.message, status: "error" })
     } finally {
       setProcessing(false)
     }
@@ -217,10 +269,7 @@ export default function SalesScreen({ onBack }) {
             </HStack>
           </Box>
 
-          {/* --- NEW CONTROL BAR --- */}
           <HStack bg={isCartonMode ? "orange.50" : "teal.50"} p={4} borderRadius="lg" justifyContent="space-between" border="1px dashed" borderColor={isCartonMode ? "orange.300" : "teal.300"}>
-            
-            {/* Mode Switch */}
             <FormControl display='flex' alignItems='center' w="auto">
                 <Switch size="lg" colorScheme="orange" isChecked={isCartonMode} onChange={() => setIsCartonMode(!isCartonMode)} mr={2} />
                 <VStack align="flex-start" spacing={0}>
@@ -228,9 +277,8 @@ export default function SalesScreen({ onBack }) {
                 </VStack>
             </FormControl>
 
-            {/* NEW: MULTIPLIER INPUT */}
             <HStack bg="white" p={2} borderRadius="md" shadow="sm">
-                <Text fontSize="sm" fontWeight="bold" color="gray.600">Quantity to Add:</Text>
+                <Text fontSize="sm" fontWeight="bold" color="gray.600">Quantity:</Text>
                 <NumberInput 
                     size="md" 
                     maxW="100px" 
@@ -281,6 +329,47 @@ export default function SalesScreen({ onBack }) {
              <CardBody>
                <Heading size="md" mb={4} pb={2} borderBottom="1px solid #eee">Current Order</Heading>
                
+               {/* --- NEW: SHARE & DOWNLOAD SECTION --- */}
+               {lastSale && cart.length === 0 && (
+                   <VStack mb={4} p={3} bg="green.50" borderRadius="md" border="1px dashed" borderColor="green.300" spacing={3} align="stretch">
+                       <Flex justify="space-between" align="center">
+                            <Text fontSize="sm" fontWeight="bold" color="green.800">Sale Success!</Text>
+                            <Badge colorScheme="green">Saved</Badge>
+                       </Flex>
+                       
+                       <SimpleGrid columns={2} spacing={2}>
+                           <Button 
+                              size="sm" 
+                              leftIcon={<ChatIcon />} 
+                              colorScheme="whatsapp"
+                              onClick={shareToWhatsApp}
+                           >
+                               WhatsApp
+                           </Button>
+                           <Button 
+                              size="sm" 
+                              leftIcon={<ExternalLinkIcon />} 
+                              colorScheme="blue"
+                              variant="outline"
+                              onClick={shareNative}
+                           >
+                               Share / Copy
+                           </Button>
+                       </SimpleGrid>
+                       
+                       <Button 
+                          size="xs" 
+                          leftIcon={<DownloadIcon />} 
+                          variant="ghost" 
+                          colorScheme="gray"
+                          onClick={() => createAndDownloadPdf(lastSale.data, lastSale.id)}
+                       >
+                           Download PDF Again
+                       </Button>
+                   </VStack>
+               )}
+               {/* --------------------------- */}
+
                <Box maxH="400px" overflowY="auto" mb={4}>
                  {cart.length === 0 ? (
                     <Text color="gray.400" textAlign="center" py={10}>Cart is empty</Text>
@@ -315,7 +404,6 @@ export default function SalesScreen({ onBack }) {
                  </Select>
                </FormControl>
 
-               {/* TOTAL SECTION */}
                <Box bg={isManualPrice ? "orange.50" : "teal.50"} p={4} borderRadius="md" border="1px solid" borderColor={isManualPrice ? "orange.200" : "teal.200"}>
                  <HStack justifyContent="space-between" mb={2}>
                     <Text fontWeight="bold" fontSize="lg">TOTAL (TZS):</Text>

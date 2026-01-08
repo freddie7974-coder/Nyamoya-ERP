@@ -4,325 +4,347 @@ import {
   Box, Button, VStack, HStack, Heading, Text, Select, Input,
   Table, Thead, Tbody, Tr, Th, Td, IconButton, useToast,
   Card, CardBody, Badge, Switch, FormControl, FormLabel,
-  NumberInput, NumberInputField, NumberInputStepper, NumberIncrementStepper, NumberDecrementStepper
+  NumberInput, NumberInputField, SimpleGrid, Divider, Spinner,
+  Flex
 } from '@chakra-ui/react'
-import { DeleteIcon, AddIcon } from '@chakra-ui/icons'
+import { DeleteIcon, ArrowBackIcon } from '@chakra-ui/icons'
 import { collection, addDoc, getDocs, updateDoc, doc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import jsPDF from 'jspdf'
 import 'jspdf-autotable'
 
 export default function SalesScreen() {
-  // Database Data
+  // --- STATE ---
   const [products, setProducts] = useState([])
   const [customers, setCustomers] = useState([])
+  const [loadingData, setLoadingData] = useState(true)
   
   // Transaction State
-  const [cart, setCart] = useState([]) // Stores { id, name, qty, price, unitPrice }
+  const [cart, setCart] = useState([]) 
   const [selectedCustomer, setSelectedCustomer] = useState('')
-  const [customerName, setCustomerName] = useState('') // For Walk-ins
+  const [customerName, setCustomerName] = useState('') 
   const [paymentMethod, setPaymentMethod] = useState('Cash')
   
-  // Custom Features
-  const [isCartonMode, setIsCartonMode] = useState(false) // Toggle for "Box of 12"
-  const [manualTotal, setManualTotal] = useState('') // Allows editing the final price
-  const [loading, setLoading] = useState(false)
+  // New Features State
+  const [isCartonMode, setIsCartonMode] = useState(false) 
+  const [manualTotal, setManualTotal] = useState('') 
+  const [processing, setProcessing] = useState(false)
   
   const toast = useToast()
 
-  // 1. Fetch Data
+  // --- 1. FETCH DATA ---
   useEffect(() => {
     const fetchData = async () => {
-      // Get Products
-      const prodSnapshot = await getDocs(collection(db, 'products'))
-      setProducts(prodSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })))
-      
-      // Get Customers
-      const custSnapshot = await getDocs(collection(db, 'customers'))
-      setCustomers(custSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })))
+      try {
+        setLoadingData(true)
+        // Fetch Products
+        const prodSnapshot = await getDocs(collection(db, 'products'))
+        const prodList = prodSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+        setProducts(prodList)
+        
+        // Fetch Customers
+        const custSnapshot = await getDocs(collection(db, 'customers'))
+        setCustomers(custSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })))
+      } catch (err) {
+        console.error("Error fetching data:", err)
+        toast({ title: "Error loading products", status: "error" })
+      } finally {
+        setLoadingData(false)
+      }
     }
     fetchData()
   }, [])
 
-  // 2. Auto-Update Total (Unless user manually typed one)
+  // --- 2. AUTO-CALCULATE TOTAL ---
   useEffect(() => {
     const calculated = cart.reduce((sum, item) => sum + item.price, 0)
-    // Only auto-update if the user hasn't typed a custom override, OR if the cart is empty
-    if (manualTotal === '' || cart.length === 0 || manualTotal == calculated) {
+    // Only update if user hasn't typed a custom override, or if cart is empty, or matches calc
+    if (manualTotal === '' || cart.length === 0 || Number(manualTotal) === calculated) {
         setManualTotal(calculated)
     }
   }, [cart])
 
-
-  // 3. Add to Cart Logic
+  // --- 3. ADD TO CART ---
   const addToCart = (product) => {
-    // Determine Quantity (1 or 12?)
-    const quantityToAdd = isCartonMode ? 12 : 1
-    const priceToAdd = product.sellingPrice * quantityToAdd
+    // Logic: Are we selling 1 Unit or 12 Units (Carton)?
+    const qtyMultiplier = isCartonMode ? 12 : 1
+    const unitPrice = product.sellingPrice || product.price || 0 // Fallback for price name
+    const priceToAdd = unitPrice * qtyMultiplier
 
     setCart(prevCart => {
       const existingItem = prevCart.find(item => item.id === product.id)
       
       if (existingItem) {
-        // If item exists, just increase quantity
         return prevCart.map(item => 
           item.id === product.id 
-            ? { ...item, qty: item.qty + quantityToAdd, price: item.price + priceToAdd }
+            ? { ...item, qty: item.qty + qtyMultiplier, price: item.price + priceToAdd }
             : item
         )
       } else {
-        // If new, add to list
         return [...prevCart, {
           id: product.id,
           name: product.name,
-          unitPrice: product.sellingPrice,
-          qty: quantityToAdd,
+          unitPrice: unitPrice,
+          qty: qtyMultiplier,
           price: priceToAdd
         }]
       }
     })
     
     toast({
-        title: `Added ${isCartonMode ? "1 Carton (12)" : "1 Unit"} of ${product.name}`,
-        status: "info",
+        title: `Added ${isCartonMode ? "12x (Carton)" : "1x"} ${product.name}`,
+        status: "success",
         duration: 1000,
+        position: "top-right"
     })
   }
 
-  // 4. Remove from Cart
+  // --- 4. REMOVE FROM CART ---
   const removeFromCart = (index) => {
     const newCart = cart.filter((_, i) => i !== index)
     setCart(newCart)
-    // Reset manual total to calculation if cart changes
+    // Recalculate total immediately to avoid confusion
     const calculated = newCart.reduce((sum, item) => sum + item.price, 0)
     setManualTotal(calculated)
   }
 
-  // 5. Generate PDF Invoice
+  // --- 5. GENERATE PDF ---
   const generateInvoice = (saleData, saleId) => {
     const doc = new jsPDF()
-    
-    // Header
     doc.setFontSize(22)
     doc.text("NYAMOYA ENTERPRISES", 14, 20)
     doc.setFontSize(10)
     doc.text("Quality Peanut Butter & Oil", 14, 26)
     doc.text(`Date: ${new Date().toLocaleDateString()}`, 14, 32)
     doc.text(`Invoice #: ${saleId.slice(0, 8).toUpperCase()}`, 14, 38)
-    
-    // Customer Info
     doc.text(`Customer: ${saleData.customerName}`, 14, 48)
-    doc.text(`Payment: ${saleData.paymentMethod}`, 14, 54)
-
-    // Table
-    const tableRows = saleData.items.map(item => [
-      item.name,
-      item.qty,
-      item.unitPrice.toLocaleString() + ' TZS',
-      item.price.toLocaleString() + ' TZS'
-    ])
-
+    
     doc.autoTable({
       startY: 60,
       head: [['Item', 'Qty', 'Unit Price', 'Total']],
-      body: tableRows,
+      body: saleData.items.map(item => [
+        item.name, item.qty, item.unitPrice.toLocaleString(), item.price.toLocaleString()
+      ]),
     })
 
-    // Footer Totals
     const finalY = doc.lastAutoTable.finalY + 10
     doc.setFontSize(14)
     doc.text(`Total Amount: ${Number(saleData.totalAmount).toLocaleString()} TZS`, 14, finalY)
-    
-    doc.save(`Invoice_${saleData.customerName}_${Date.now()}.pdf`)
+    doc.save(`Invoice_${saleId}.pdf`)
   }
 
-  // 6. Complete Sale
+  // --- 6. CHECKOUT ---
   const handleCheckout = async () => {
     if (cart.length === 0) return
-    setLoading(true)
+    setProcessing(true)
 
     try {
-      const finalAmount = Number(manualTotal) // Use the editable text box value
-      
-      // Determine Customer Name
+      const finalAmount = Number(manualTotal)
       let finalCustomerName = customerName || "Walk-in Customer"
       if (selectedCustomer) {
         const c = customers.find(c => c.id === selectedCustomer)
         if (c) finalCustomerName = c.name
       }
 
-      // A. Save Sale Record
       const saleData = {
         date: new Date().toISOString().split('T')[0],
         timestamp: serverTimestamp(),
         customerName: finalCustomerName,
         customerId: selectedCustomer || null,
-        items: cart, // Saves the full list of items
-        totalAmount: finalAmount, // Saves the edited price
+        items: cart,
+        totalAmount: finalAmount,
         paymentMethod: paymentMethod,
         type: 'income'
       }
       
       const docRef = await addDoc(collection(db, 'sales'), saleData)
 
-      // B. Deduct Stock (Loop through cart)
+      // Deduct Stock
       for (const item of cart) {
         const productRef = doc(db, 'products', item.id)
-        const productSnap = await getDoc(productRef)
-        
-        if (productSnap.exists()) {
-          const currentStock = productSnap.data().currentStock || 0
-          await updateDoc(productRef, {
-            currentStock: currentStock - item.qty
-          })
+        const snap = await getDoc(productRef)
+        if (snap.exists()) {
+          const current = snap.data().currentStock || 0
+          await updateDoc(productRef, { currentStock: current - item.qty })
         }
       }
 
-      // C. Generate PDF
       generateInvoice(saleData, docRef.id)
-
       toast({ title: "Sale Completed!", status: "success" })
+      
+      // Reset
       setCart([])
       setManualTotal('')
       setCustomerName('')
       setSelectedCustomer('')
     } catch (error) {
       console.error(error)
-      toast({ title: "Error processing sale", status: "error" })
+      toast({ title: "Sale Failed", status: "error" })
     } finally {
-      setLoading(false)
+      setProcessing(false)
     }
   }
 
+  // --- RENDER ---
   return (
-    <Box p={5}>
-      <Heading size="lg" mb={5} color="teal.600">New Bulk Sale</Heading>
+    <Box p={5} maxW="1600px" mx="auto">
+      {/* Header */}
+      <HStack mb={6} justifyContent="space-between">
+        <HStack>
+            <ArrowBackIcon boxSize={6} color="gray.500" cursor="pointer" />
+            <Heading size="lg" color="teal.700">New Sale</Heading>
+        </HStack>
+        <Badge colorScheme={isCartonMode ? "orange" : "teal"} p={2} borderRadius="md" fontSize="md">
+            {isCartonMode ? "📦 BULK MODE ACTIVE" : "🧴 SINGLE UNIT MODE"}
+        </Badge>
+      </HStack>
 
-      <HStack spacing={10} alignItems="flex-start" flexDirection={{ base: 'column', md: 'row' }}>
+      <Flex direction={{ base: 'column', lg: 'row' }} gap={6}>
         
-        {/* LEFT SIDE: Product Selector */}
-        <VStack flex={1} w="100%" spacing={5}>
+        {/* LEFT SIDE: INPUTS & PRODUCTS */}
+        <VStack flex={2} w="100%" spacing={5} align="stretch">
           
-          {/* Customer Selection */}
-          <Card w="100%" p={4} variant="outline">
-            <VStack>
-              <Select placeholder="Select Registered Customer" value={selectedCustomer} onChange={(e) => setSelectedCustomer(e.target.value)}>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </Select>
-              <Input placeholder="Or type Walk-in Name..." value={customerName} onChange={(e) => setCustomerName(e.target.value)} disabled={!!selectedCustomer} />
+          {/* 1. Customer Selection */}
+          <Box bg="white" p={4} borderRadius="lg" shadow="sm" border="1px solid" borderColor="gray.100">
+            <Text mb={2} fontWeight="bold" color="gray.600">Select Customer</Text>
+            <VStack spacing={3}>
+                <Select placeholder="Select a Customer (Optional)" value={selectedCustomer} onChange={(e) => setSelectedCustomer(e.target.value)}>
+                    {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </Select>
+                <Input placeholder="Or type Name (Walk-in)" value={customerName} onChange={(e) => setCustomerName(e.target.value)} isDisabled={!!selectedCustomer} />
             </VStack>
-          </Card>
-
-          {/* Mode Switcher: Unit vs Carton */}
-          <Card w="100%" bg={isCartonMode ? "orange.50" : "gray.50"}>
-            <CardBody>
-              <FormControl display='flex' alignItems='center'>
-                <FormLabel htmlFor='carton-mode' mb='0' fontWeight="bold">
-                  {isCartonMode ? "📦 Selling by CARTON (x12)" : "🧴 Selling by SINGLE UNIT"}
-                </FormLabel>
-                <Switch id='carton-mode' isChecked={isCartonMode} onChange={() => setIsCartonMode(!isCartonMode)} colorScheme="orange" size="lg" />
-              </FormControl>
-              <Text fontSize="xs" color="gray.500" mt={2}>
-                Toggle this to instantly add items in batches of 12.
-              </Text>
-            </CardBody>
-          </Card>
-
-          {/* Product Grid */}
-          <Box w="100%" display="grid" gridTemplateColumns="repeat(auto-fill, minmax(150px, 1fr))" gap={4}>
-            {products.map(product => (
-              <Button
-                key={product.id}
-                h="100px"
-                colorScheme={isCartonMode ? "orange" : "teal"}
-                variant="outline"
-                flexDirection="column"
-                onClick={() => addToCart(product)}
-              >
-                <Text fontWeight="bold">{product.name}</Text>
-                <Text fontSize="sm">{product.sellingPrice?.toLocaleString()} TZS</Text>
-                {isCartonMode && <Badge colorScheme="red" mt={1}>+12 Units</Badge>}
-              </Button>
-            ))}
           </Box>
+
+          {/* 2. Carton Toggle Switch */}
+          <HStack bg={isCartonMode ? "orange.50" : "teal.50"} p={4} borderRadius="lg" justifyContent="space-between" border="1px dashed" borderColor={isCartonMode ? "orange.300" : "teal.300"}>
+            <VStack align="flex-start" spacing={0}>
+                <Text fontWeight="bold" fontSize="lg">
+                    {isCartonMode ? "Selling by CARTON (x12)" : "Selling by SINGLE UNIT (x1)"}
+                </Text>
+                <Text fontSize="sm" color="gray.500">
+                    {isCartonMode ? "Clicking a product adds 12 items instantly." : "Clicking a product adds 1 item."}
+                </Text>
+            </VStack>
+            <Switch size="lg" colorScheme="orange" isChecked={isCartonMode} onChange={() => setIsCartonMode(!isCartonMode)} />
+          </HStack>
+
+          {/* 3. Product Grid (Restored Big Buttons) */}
+          <Text fontWeight="bold" fontSize="lg" mt={2}>Products</Text>
+          {loadingData ? (
+             <Flex justify="center" p={10}><Spinner size="xl" /></Flex>
+          ) : (
+             <SimpleGrid columns={{ base: 1, sm: 2, md: 3 }} spacing={4}>
+                {products.length === 0 ? <Text>No products found in database.</Text> : products.map(product => (
+                  <Button
+                    key={product.id}
+                    height="120px"
+                    colorScheme={isCartonMode ? "orange" : "teal"}
+                    variant="outline"
+                    flexDirection="column"
+                    justifyContent="center"
+                    boxShadow="sm"
+                    _hover={{ bg: isCartonMode ? "orange.50" : "teal.50", transform: "translateY(-2px)", boxShadow: "md" }}
+                    onClick={() => addToCart(product)}
+                  >
+                    <Text fontSize="lg" fontWeight="bold" mb={1}>{product.name}</Text>
+                    <Text fontSize="md" color="gray.600">
+                        {/* Display Price */}
+                        TZS {(product.sellingPrice || product.price || 0).toLocaleString()} 
+                    </Text>
+                    {isCartonMode && <Badge mt={2} colorScheme="red" bg="red.100" color="red.700">Add 12 Pack</Badge>}
+                  </Button>
+                ))}
+             </SimpleGrid>
+          )}
         </VStack>
 
-        {/* RIGHT SIDE: The Cart */}
-        <VStack flex={1} w="100%" spacing={5}>
-          <Card w="100%" boxShadow="md">
-            <CardBody>
-              <Heading size="md" mb={4}>Current Order</Heading>
-              
-              {cart.length === 0 ? (
-                <Text color="gray.400">Cart is empty...</Text>
-              ) : (
-                <Table size="sm">
-                  <Thead>
-                    <Tr>
-                      <Th>Item</Th>
-                      <Th isNumeric>Qty</Th>
-                      <Th isNumeric>Total</Th>
-                      <Th></Th>
-                    </Tr>
-                  </Thead>
-                  <Tbody>
-                    {cart.map((item, index) => (
-                      <Tr key={index}>
-                        <Td>{item.name}</Td>
-                        <Td isNumeric fontWeight="bold">{item.qty}</Td>
-                        <Td isNumeric>{item.price.toLocaleString()}</Td>
-                        <Td>
-                          <IconButton icon={<DeleteIcon />} size="xs" colorScheme="red" onClick={() => removeFromCart(index)} />
-                        </Td>
-                      </Tr>
-                    ))}
-                  </Tbody>
-                </Table>
-              )}
 
-              <Box mt={6} pt={4} borderTop="1px solid #eee">
-                <HStack justifyContent="space-between" mb={2}>
-                  <Text fontWeight="bold">Payment Method:</Text>
-                  <Select w="150px" size="sm" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+        {/* RIGHT SIDE: CART & TOTAL */}
+        <VStack flex={1} w="100%" spacing={5} align="stretch">
+           <Card variant="outline" borderColor="gray.200" boxShadow="lg" position="sticky" top="20px">
+             <CardBody>
+               <Heading size="md" mb={4} pb={2} borderBottom="1px solid #eee">Current Order</Heading>
+               
+               {/* Cart Items List */}
+               <Box maxH="400px" overflowY="auto" mb={4}>
+                 {cart.length === 0 ? (
+                    <Text color="gray.400" textAlign="center" py={10}>Cart is empty</Text>
+                 ) : (
+                    <Table size="sm">
+                      <Thead><Tr><Th>Item</Th><Th isNumeric>Qty</Th><Th isNumeric>Total</Th><Th></Th></Tr></Thead>
+                      <Tbody>
+                        {cart.map((item, index) => (
+                          <Tr key={index}>
+                            <Td>
+                                <Text fontWeight="bold" fontSize="sm">{item.name}</Text>
+                                <Text fontSize="xs" color="gray.500">@{item.unitPrice}</Text>
+                            </Td>
+                            <Td isNumeric>{item.qty}</Td>
+                            <Td isNumeric>{item.price.toLocaleString()}</Td>
+                            <Td><IconButton icon={<DeleteIcon />} size="xs" colorScheme="red" variant="ghost" onClick={() => removeFromCart(index)} /></Td>
+                          </Tr>
+                        ))}
+                      </Tbody>
+                    </Table>
+                 )}
+               </Box>
+
+               <Divider mb={4} />
+
+               {/* Payment Method */}
+               <FormControl mb={4}>
+                 <FormLabel fontSize="sm">Payment Method</FormLabel>
+                 <Select size="sm" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
                     <option value="Cash">Cash</option>
-                    <option value="Bank/Mobile">Mobile Money</option>
+                    <option value="Mobile Money">Mobile Money / Bank</option>
                     <option value="Credit">Credit (Debt)</option>
-                  </Select>
-                </HStack>
+                 </Select>
+               </FormControl>
 
-                <HStack justifyContent="space-between" mt={4}>
-                   <Text fontSize="lg" fontWeight="bold">Grand Total (TZS):</Text>
-                   {/* EDITABLE TOTAL FIELD */}
-                   <NumberInput 
-                      size="lg" 
-                      w="200px" 
-                      value={manualTotal} 
-                      onChange={(valueString) => setManualTotal(valueString)}
-                    >
-                      <NumberInputField fontWeight="bold" textAlign="right" color="teal.600" />
-                   </NumberInput>
-                </HStack>
-                <Text fontSize="xs" color="gray.500" textAlign="right">
-                   (You can edit this amount manually)
-                </Text>
+               {/* Editable Total Section */}
+               <Box bg={isCartonMode ? "orange.50" : "teal.50"} p={4} borderRadius="md">
+                 <HStack justifyContent="space-between" mb={2}>
+                    <Text fontWeight="bold" fontSize="lg">TOTAL (TZS):</Text>
+                 </HStack>
+                 <NumberInput 
+                    size="lg" 
+                    value={manualTotal} 
+                    onChange={(valueString) => setManualTotal(valueString)} 
+                    min={0}
+                 >
+                    <NumberInputField 
+                        bg="white" 
+                        fontWeight="bold" 
+                        fontSize="xl" 
+                        textAlign="right" 
+                        color={Number(manualTotal) !== cart.reduce((a,b)=>a+b.price,0) ? "orange.500" : "teal.600"}
+                    />
+                 </NumberInput>
+                 <Text fontSize="xs" textAlign="right" color="gray.500" mt={1}>
+                    {Number(manualTotal) !== cart.reduce((a,b)=>a+b.price,0) ? "* Price manually edited" : "Calculated automatically"}
+                 </Text>
+               </Box>
 
-                <Button 
+               {/* Checkout Button */}
+               <Button 
                   mt={4} 
                   w="100%" 
                   colorScheme="teal" 
                   size="lg" 
+                  height="60px"
+                  fontSize="xl"
                   onClick={handleCheckout}
                   isDisabled={cart.length === 0}
-                  isLoading={loading}
+                  isLoading={processing}
                 >
-                  Confirm Sale & Print
-                </Button>
-              </Box>
-            </CardBody>
-          </Card>
+                  Confirm Sale
+               </Button>
+
+             </CardBody>
+           </Card>
         </VStack>
 
-      </HStack>
+      </Flex>
     </Box>
   )
 }

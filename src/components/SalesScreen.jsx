@@ -13,7 +13,8 @@ import { db } from '../firebase'
 import jsPDF from 'jspdf'
 import 'jspdf-autotable'
 
-export default function SalesScreen() {
+// ✅ ADDED: { onBack } prop so the arrow works
+export default function SalesScreen({ onBack }) {
   // --- STATE ---
   const [products, setProducts] = useState([])
   const [customers, setCustomers] = useState([])
@@ -32,15 +33,14 @@ export default function SalesScreen() {
   
   const toast = useToast()
 
-  // --- 1. FETCH DATA (UPDATED to 'inventory') ---
+  // --- 1. FETCH DATA (Using 'inventory') ---
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoadingData(true)
         
-        // ✅ FIX 1: Changed 'products' to 'inventory' to match your screenshot
+        // ✅ Corrected: Looks inside 'inventory' folder
         const prodSnapshot = await getDocs(collection(db, 'inventory'))
-        
         const prodList = prodSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
         setProducts(prodList)
         
@@ -60,6 +60,7 @@ export default function SalesScreen() {
   // --- 2. AUTO-CALCULATE TOTAL ---
   useEffect(() => {
     const calculated = cart.reduce((sum, item) => sum + item.price, 0)
+    // Only update if user hasn't typed a custom override, or if cart is empty, or matches calc
     if (manualTotal === '' || cart.length === 0 || Number(manualTotal) === calculated) {
         setManualTotal(calculated)
     }
@@ -67,6 +68,7 @@ export default function SalesScreen() {
 
   // --- 3. ADD TO CART ---
   const addToCart = (product) => {
+    // Logic: Are we selling 1 Unit or 12 Units (Carton)?
     const qtyMultiplier = isCartonMode ? 12 : 1
     // Fallback: Check 'sellingPrice', then 'price', then 0
     const unitPrice = product.sellingPrice || product.price || 0 
@@ -159,9 +161,8 @@ export default function SalesScreen() {
       
       const docRef = await addDoc(collection(db, 'sales'), saleData)
 
-      // Deduct Stock
+      // Deduct Stock from 'inventory'
       for (const item of cart) {
-        // ✅ FIX 2: Changed 'products' to 'inventory' here too
         const productRef = doc(db, 'inventory', item.id)
         const snap = await getDoc(productRef)
         if (snap.exists()) {
@@ -190,7 +191,14 @@ export default function SalesScreen() {
     <Box p={5} maxW="1600px" mx="auto">
       <HStack mb={6} justifyContent="space-between">
         <HStack>
-            <ArrowBackIcon boxSize={6} color="gray.500" cursor="pointer" />
+            {/* ✅ ADDED: onClick={onBack} */}
+            <ArrowBackIcon 
+                boxSize={6} 
+                color="gray.500" 
+                cursor="pointer" 
+                onClick={onBack}
+                _hover={{ color: "teal.600" }} 
+            />
             <Heading size="lg" color="teal.700">New Sale</Heading>
         </HStack>
         <Badge colorScheme={isCartonMode ? "orange" : "teal"} p={2} borderRadius="md" fontSize="md">

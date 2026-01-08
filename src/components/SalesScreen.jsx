@@ -1,309 +1,328 @@
 // src/components/SalesScreen.jsx
 import { useState, useEffect } from 'react'
-import { 
-  Box, Button, SimpleGrid, Text, HStack, Heading, useToast, Spinner, 
-  Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, 
-  useDisclosure, VStack, Input, Select 
+import {
+  Box, Button, VStack, HStack, Heading, Text, Select, Input,
+  Table, Thead, Tbody, Tr, Th, Td, IconButton, useToast,
+  Card, CardBody, Badge, Switch, FormControl, FormLabel,
+  NumberInput, NumberInputField, NumberInputStepper, NumberIncrementStepper, NumberDecrementStepper
 } from '@chakra-ui/react'
-import { 
-  collection, getDocs, addDoc, serverTimestamp, doc, updateDoc, 
-  increment, query, orderBy 
-} from 'firebase/firestore'
+import { DeleteIcon, AddIcon } from '@chakra-ui/icons'
+import { collection, addDoc, getDocs, updateDoc, doc, getDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
-import { logAction } from '../utils/logger'
+import jsPDF from 'jspdf'
+import 'jspdf-autotable'
 
-// 👇 PDF Imports
-import { jsPDF } from "jspdf" 
-import autoTable from "jspdf-autotable"
-
-export default function SalesScreen({ onBack }) {
+export default function SalesScreen() {
+  // Database Data
   const [products, setProducts] = useState([])
-  const [customers, setCustomers] = useState([]) // 👥 Store Customers here
-  const [cart, setCart] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [customers, setCustomers] = useState([])
   
-  // Customer Selection State
-  const [selectedCustomerId, setSelectedCustomerId] = useState('') 
-  const [customerName, setCustomerName] = useState('Walk-in Customer') // Default
+  // Transaction State
+  const [cart, setCart] = useState([]) // Stores { id, name, qty, price, unitPrice }
+  const [selectedCustomer, setSelectedCustomer] = useState('')
+  const [customerName, setCustomerName] = useState('') // For Walk-ins
+  const [paymentMethod, setPaymentMethod] = useState('Cash')
   
-  const { isOpen, onOpen, onClose } = useDisclosure()
-  const [lastSale, setLastSale] = useState(null)
+  // Custom Features
+  const [isCartonMode, setIsCartonMode] = useState(false) // Toggle for "Box of 12"
+  const [manualTotal, setManualTotal] = useState('') // Allows editing the final price
+  const [loading, setLoading] = useState(false)
   
   const toast = useToast()
 
-  // 1. FETCH DATA (Products & Customers) - FIXED & ROBUST 🛠️
+  // 1. Fetch Data
   useEffect(() => {
     const fetchData = async () => {
-      try {
-        setLoading(true)
-
-        // A. Fetch Inventory
-        const prodSnap = await getDocs(collection(db, "inventory"))
-        const prodList = []
-        prodSnap.forEach((doc) => {
-            const data = doc.data()
-            // Only add valid products
-            if (data.name) {
-                prodList.push({ id: doc.id, ...data })
-            }
-        })
-        setProducts(prodList)
-
-        // B. Fetch Customers (Alphabetical)
-        const q = query(collection(db, "customers"), orderBy("name"))
-        const custSnap = await getDocs(q)
-        const custList = []
-        custSnap.forEach((doc) => custList.push({ id: doc.id, ...doc.data() }))
-        setCustomers(custList)
-
-      } catch (error) {
-        console.error("DETAILED ERROR:", error) // 👈 Check Console if this happens!
-        toast({ 
-            title: "Error loading data", 
-            description: error.message, // Shows the real reason
-            status: "error" 
-        })
-      } finally {
-        setLoading(false)
-      }
+      // Get Products
+      const prodSnapshot = await getDocs(collection(db, 'products'))
+      setProducts(prodSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })))
+      
+      // Get Customers
+      const custSnapshot = await getDocs(collection(db, 'customers'))
+      setCustomers(custSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })))
     }
     fetchData()
   }, [])
 
-  // Handle Customer Selection
-  const handleCustomerSelect = (e) => {
-    const id = e.target.value
-    setSelectedCustomerId(id)
-    if (id) {
-      const cust = customers.find(c => c.id === id)
-      setCustomerName(cust.name)
-    } else {
-      setCustomerName('Walk-in Customer')
+  // 2. Auto-Update Total (Unless user manually typed one)
+  useEffect(() => {
+    const calculated = cart.reduce((sum, item) => sum + item.price, 0)
+    // Only auto-update if the user hasn't typed a custom override, OR if the cart is empty
+    if (manualTotal === '' || cart.length === 0 || manualTotal == calculated) {
+        setManualTotal(calculated)
     }
-  }
+  }, [cart])
 
+
+  // 3. Add to Cart Logic
   const addToCart = (product) => {
-    setCart([...cart, product])
+    // Determine Quantity (1 or 12?)
+    const quantityToAdd = isCartonMode ? 12 : 1
+    const priceToAdd = product.sellingPrice * quantityToAdd
+
+    setCart(prevCart => {
+      const existingItem = prevCart.find(item => item.id === product.id)
+      
+      if (existingItem) {
+        // If item exists, just increase quantity
+        return prevCart.map(item => 
+          item.id === product.id 
+            ? { ...item, qty: item.qty + quantityToAdd, price: item.price + priceToAdd }
+            : item
+        )
+      } else {
+        // If new, add to list
+        return [...prevCart, {
+          id: product.id,
+          name: product.name,
+          unitPrice: product.sellingPrice,
+          qty: quantityToAdd,
+          price: priceToAdd
+        }]
+      }
+    })
+    
+    toast({
+        title: `Added ${isCartonMode ? "1 Carton (12)" : "1 Unit"} of ${product.name}`,
+        status: "info",
+        duration: 1000,
+    })
   }
 
-  const totalAmount = cart.reduce((sum, item) => sum + (item.price || 0), 0)
+  // 4. Remove from Cart
+  const removeFromCart = (index) => {
+    const newCart = cart.filter((_, i) => i !== index)
+    setCart(newCart)
+    // Reset manual total to calculation if cart changes
+    const calculated = newCart.reduce((sum, item) => sum + item.price, 0)
+    setManualTotal(calculated)
+  }
 
-  // 2. CHECKOUT (Updates Customer Stats + Stock)
+  // 5. Generate PDF Invoice
+  const generateInvoice = (saleData, saleId) => {
+    const doc = new jsPDF()
+    
+    // Header
+    doc.setFontSize(22)
+    doc.text("NYAMOYA ENTERPRISES", 14, 20)
+    doc.setFontSize(10)
+    doc.text("Quality Peanut Butter & Oil", 14, 26)
+    doc.text(`Date: ${new Date().toLocaleDateString()}`, 14, 32)
+    doc.text(`Invoice #: ${saleId.slice(0, 8).toUpperCase()}`, 14, 38)
+    
+    // Customer Info
+    doc.text(`Customer: ${saleData.customerName}`, 14, 48)
+    doc.text(`Payment: ${saleData.paymentMethod}`, 14, 54)
+
+    // Table
+    const tableRows = saleData.items.map(item => [
+      item.name,
+      item.qty,
+      item.unitPrice.toLocaleString() + ' TZS',
+      item.price.toLocaleString() + ' TZS'
+    ])
+
+    doc.autoTable({
+      startY: 60,
+      head: [['Item', 'Qty', 'Unit Price', 'Total']],
+      body: tableRows,
+    })
+
+    // Footer Totals
+    const finalY = doc.lastAutoTable.finalY + 10
+    doc.setFontSize(14)
+    doc.text(`Total Amount: ${Number(saleData.totalAmount).toLocaleString()} TZS`, 14, finalY)
+    
+    doc.save(`Invoice_${saleData.customerName}_${Date.now()}.pdf`)
+  }
+
+  // 6. Complete Sale
   const handleCheckout = async () => {
     if (cart.length === 0) return
+    setLoading(true)
 
-    setIsSubmitting(true)
     try {
-      // A. Save Sale (Includes Cost & Profit 💰)
-      const saleRef = await addDoc(collection(db, "sales"), {
-        items: cart.map(item => ({
-          name: item.name,
-          price: item.price,
-          cost: item.averageUnitCost || 0 
-        })),
-        totalAmount: totalAmount,
-        totalCost: cart.reduce((sum, item) => sum + (item.averageUnitCost || 0), 0), 
-        itemCount: cart.length,
-        customer: customerName,
-        customerId: selectedCustomerId || null,
-        createdAt: serverTimestamp(), // Changed from 'date' to 'createdAt' for consistency
-        date: serverTimestamp() // Keeping both for safety with old code
-      })
+      const finalAmount = Number(manualTotal) // Use the editable text box value
+      
+      // Determine Customer Name
+      let finalCustomerName = customerName || "Walk-in Customer"
+      if (selectedCustomer) {
+        const c = customers.find(c => c.id === selectedCustomer)
+        if (c) finalCustomerName = c.name
+      }
 
-      // B. Log the Action
-      await logAction('Staff', 'New Sale', `Sold ${cart.length} items to ${customerName}`)
+      // A. Save Sale Record
+      const saleData = {
+        date: new Date().toISOString().split('T')[0],
+        timestamp: serverTimestamp(),
+        customerName: finalCustomerName,
+        customerId: selectedCustomer || null,
+        items: cart, // Saves the full list of items
+        totalAmount: finalAmount, // Saves the edited price
+        paymentMethod: paymentMethod,
+        type: 'income'
+      }
+      
+      const docRef = await addDoc(collection(db, 'sales'), saleData)
 
-      // C. Update Stock
+      // B. Deduct Stock (Loop through cart)
       for (const item of cart) {
-        const productRef = doc(db, 'inventory', item.id)
-        await updateDoc(productRef, { currentStock: increment(-1) })
+        const productRef = doc(db, 'products', item.id)
+        const productSnap = await getDoc(productRef)
+        
+        if (productSnap.exists()) {
+          const currentStock = productSnap.data().currentStock || 0
+          await updateDoc(productRef, {
+            currentStock: currentStock - item.qty
+          })
+        }
       }
 
-      // D. Update Customer Stats (CRM)
-      if (selectedCustomerId) {
-        const customerRef = doc(db, 'customers', selectedCustomerId)
-        await updateDoc(customerRef, { 
-          totalSpent: increment(totalAmount) 
-        })
-      }
+      // C. Generate PDF
+      generateInvoice(saleData, docRef.id)
 
-      // E. Set Data for Receipt
-      setLastSale({
-        id: saleRef.id.substring(0, 6).toUpperCase(),
-        items: cart,
-        total: totalAmount,
-        customer: customerName,
-        date: new Date().toLocaleDateString()
-      })
-
-      setCart([]) 
-      setSelectedCustomerId('')
-      setCustomerName('Walk-in Customer') 
-      onOpen() 
-
+      toast({ title: "Sale Completed!", status: "success" })
+      setCart([])
+      setManualTotal('')
+      setCustomerName('')
+      setSelectedCustomer('')
     } catch (error) {
-      console.error("Checkout Error:", error)
-      toast({ title: "Error processing sale", description: error.message, status: "error" })
+      console.error(error)
+      toast({ title: "Error processing sale", status: "error" })
     } finally {
-      setIsSubmitting(false)
+      setLoading(false)
     }
   }
-
-  // 3. WHATSAPP
-  const sendWhatsApp = () => {
-    if (!lastSale) return
-    const itemList = lastSale.items.map(i => `• ${i.name}`).join('\n')
-    const message = `*INVOICE #${lastSale.id}* 📄\n` +
-                    `*Customer:* ${lastSale.customer}\n\n` +
-                    `*Items:*\n${itemList}\n\n` +
-                    `*Total: TZS ${lastSale.total.toLocaleString()}*\n\n` +
-                    `Thank you! - Nyamoya`
-    const url = `https://wa.me/?text=${encodeURIComponent(message)}`
-    window.open(url, '_blank')
-  }
-
-  // 4. PDF GENERATOR
-  const generatePDF = () => {
-    if (!lastSale) return
-    try {
-      const doc = new jsPDF()
-      doc.setFontSize(22)
-      doc.setTextColor(40, 40, 40)
-      doc.text("NYAMOYA ENTERPRISES", 14, 20)
-      doc.setFontSize(12)
-      doc.text("Quality Peanut Butter", 14, 28)
-      doc.text("Phone: +255 754 614 669", 14, 34)
-
-      doc.setFontSize(16)
-      doc.text("INVOICE", 140, 20)
-      doc.setFontSize(10)
-      doc.text(`Invoice #: ${lastSale.id || '---'}`, 140, 30)
-      doc.text(`Date: ${lastSale.date || 'N/A'}`, 140, 36)
-      doc.text(`Bill To: ${lastSale.customer || 'Customer'}`, 140, 42)
-
-      const tableColumn = ["Item Description", "Price (TZS)"]
-      const tableRows = []
-      lastSale.items.forEach(item => {
-        const price = item.price !== undefined ? item.price : 0
-        const name = item.name || "Unknown Item"
-        tableRows.push([name, price.toLocaleString()])
-      })
-
-      autoTable(doc, {
-        startY: 50,
-        head: [tableColumn],
-        body: tableRows,
-        theme: 'grid',
-        headStyles: { fillColor: [0, 128, 128] } 
-      })
-
-      const safeTotal = lastSale.total !== undefined ? lastSale.total : 0
-      const finalY = doc.lastAutoTable.finalY + 10
-      doc.setFontSize(14)
-      doc.setFont(undefined, 'bold')
-      doc.text(`TOTAL AMOUNT: TZS ${safeTotal.toLocaleString()}`, 14, finalY)
-
-      doc.save(`Invoice_${lastSale.id || 'New'}.pdf`)
-      toast({ title: "Invoice Downloaded ✅", status: "success" })
-    } catch (error) {
-      console.error("PDF Error:", error)
-      toast({ title: "PDF Failed", status: "error" })
-    }
-  }
-
-  if (loading) return <Box p={10} textAlign="center"><Spinner size="xl" /></Box>
 
   return (
-    <Box p={4} maxW="600px" mx="auto">
-      <HStack justifyContent="space-between" mb={6}>
-        <Button onClick={onBack} variant="ghost">← Back</Button>
-        <Heading size="md">New Sale</Heading>
-        <Box w="70px" />
-      </HStack>
+    <Box p={5}>
+      <Heading size="lg" mb={5} color="teal.600">New Bulk Sale</Heading>
 
-      {/* Customer Dropdown */}
-      <Box mb={4}>
-        <Text mb={2} fontWeight="bold" fontSize="sm">Select Customer</Text>
-        <Select 
-          placeholder="Select a Customer (Optional)" 
-          bg="white" 
-          size="lg"
-          value={selectedCustomerId}
-          onChange={handleCustomerSelect}
-        >
-          {customers.map(cust => (
-            <option key={cust.id} value={cust.id}>
-              {cust.name} {cust.location ? `(${cust.location})` : ''}
-            </option>
-          ))}
-        </Select>
+      <HStack spacing={10} alignItems="flex-start" flexDirection={{ base: 'column', md: 'row' }}>
         
-        {/* Fallback Input */}
-        {!selectedCustomerId && (
-          <Input 
-            mt={2}
-            placeholder="Or type Name (Walk-in)" 
-            bg="white"
-            value={customerName === 'Walk-in Customer' ? '' : customerName}
-            onChange={(e) => setCustomerName(e.target.value || 'Walk-in Customer')}
-          />
-        )}
-      </Box>
-
-      {/* Products Grid */}
-      <SimpleGrid columns={2} spacing={4} mb={24}>
-        {products.map((product) => (
-          <Button
-            key={product.id}
-            height="100px"
-            colorScheme="teal"
-            variant="outline"
-            onClick={() => addToCart(product)}
-            display="flex"
-            flexDirection="column"
-            justifyContent="center"
-            whiteSpace="normal"
-          >
-            <Text fontSize="lg" fontWeight="bold">{product.name}</Text>
-            <Text>TZS {product.price ? product.price.toLocaleString() : '0'}</Text>
-          </Button>
-        ))}
-        {products.length === 0 && (
-            <Box gridColumn="span 2" textAlign="center" py={10} color="gray.500">
-                No products found. Add items in Stock Screen first.
-            </Box>
-        )}
-      </SimpleGrid>
-
-      {/* Footer / Checkout */}
-      <Box position="fixed" bottom="0" left="0" right="0" bg="white" p={4} borderTop="1px solid" borderColor="gray.200" boxShadow="lg">
-        <HStack justifyContent="space-between" mb={4}>
-          <Text fontSize="xl" fontWeight="bold">Total:</Text>
-          <Text fontSize="2xl" color="teal.600" fontWeight="extrabold">TZS {totalAmount.toLocaleString()}</Text>
-        </HStack>
-        <Button colorScheme="teal" size="lg" width="100%" onClick={handleCheckout} isDisabled={cart.length === 0} isLoading={isSubmitting}>
-          Confirm Sale ({cart.length})
-        </Button>
-      </Box>
-
-      {/* Success Modal */}
-      <Modal isOpen={isOpen} onClose={() => { onClose(); onBack(); }} isCentered size="sm">
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader textAlign="center" color="green.500">Sale Successful! 🎉</ModalHeader>
-          <ModalBody>
-            <VStack spacing={4}>
-              <Text textAlign="center">Choose receipt type:</Text>
-              <Button colorScheme="green" w="100%" leftIcon={<Text>💬</Text>} onClick={sendWhatsApp}>Send via WhatsApp</Button>
-              <Button colorScheme="red" w="100%" leftIcon={<Text>📄</Text>} onClick={generatePDF}>Download PDF Invoice</Button>
+        {/* LEFT SIDE: Product Selector */}
+        <VStack flex={1} w="100%" spacing={5}>
+          
+          {/* Customer Selection */}
+          <Card w="100%" p={4} variant="outline">
+            <VStack>
+              <Select placeholder="Select Registered Customer" value={selectedCustomer} onChange={(e) => setSelectedCustomer(e.target.value)}>
+                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select>
+              <Input placeholder="Or type Walk-in Name..." value={customerName} onChange={(e) => setCustomerName(e.target.value)} disabled={!!selectedCustomer} />
             </VStack>
-          </ModalBody>
-          <ModalFooter justifyContent="center">
-            <Button variant="ghost" onClick={() => { onClose(); onBack(); }}>Close</Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+          </Card>
+
+          {/* Mode Switcher: Unit vs Carton */}
+          <Card w="100%" bg={isCartonMode ? "orange.50" : "gray.50"}>
+            <CardBody>
+              <FormControl display='flex' alignItems='center'>
+                <FormLabel htmlFor='carton-mode' mb='0' fontWeight="bold">
+                  {isCartonMode ? "📦 Selling by CARTON (x12)" : "🧴 Selling by SINGLE UNIT"}
+                </FormLabel>
+                <Switch id='carton-mode' isChecked={isCartonMode} onChange={() => setIsCartonMode(!isCartonMode)} colorScheme="orange" size="lg" />
+              </FormControl>
+              <Text fontSize="xs" color="gray.500" mt={2}>
+                Toggle this to instantly add items in batches of 12.
+              </Text>
+            </CardBody>
+          </Card>
+
+          {/* Product Grid */}
+          <Box w="100%" display="grid" gridTemplateColumns="repeat(auto-fill, minmax(150px, 1fr))" gap={4}>
+            {products.map(product => (
+              <Button
+                key={product.id}
+                h="100px"
+                colorScheme={isCartonMode ? "orange" : "teal"}
+                variant="outline"
+                flexDirection="column"
+                onClick={() => addToCart(product)}
+              >
+                <Text fontWeight="bold">{product.name}</Text>
+                <Text fontSize="sm">{product.sellingPrice?.toLocaleString()} TZS</Text>
+                {isCartonMode && <Badge colorScheme="red" mt={1}>+12 Units</Badge>}
+              </Button>
+            ))}
+          </Box>
+        </VStack>
+
+        {/* RIGHT SIDE: The Cart */}
+        <VStack flex={1} w="100%" spacing={5}>
+          <Card w="100%" boxShadow="md">
+            <CardBody>
+              <Heading size="md" mb={4}>Current Order</Heading>
+              
+              {cart.length === 0 ? (
+                <Text color="gray.400">Cart is empty...</Text>
+              ) : (
+                <Table size="sm">
+                  <Thead>
+                    <Tr>
+                      <Th>Item</Th>
+                      <Th isNumeric>Qty</Th>
+                      <Th isNumeric>Total</Th>
+                      <Th></Th>
+                    </Tr>
+                  </Thead>
+                  <Tbody>
+                    {cart.map((item, index) => (
+                      <Tr key={index}>
+                        <Td>{item.name}</Td>
+                        <Td isNumeric fontWeight="bold">{item.qty}</Td>
+                        <Td isNumeric>{item.price.toLocaleString()}</Td>
+                        <Td>
+                          <IconButton icon={<DeleteIcon />} size="xs" colorScheme="red" onClick={() => removeFromCart(index)} />
+                        </Td>
+                      </Tr>
+                    ))}
+                  </Tbody>
+                </Table>
+              )}
+
+              <Box mt={6} pt={4} borderTop="1px solid #eee">
+                <HStack justifyContent="space-between" mb={2}>
+                  <Text fontWeight="bold">Payment Method:</Text>
+                  <Select w="150px" size="sm" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
+                    <option value="Cash">Cash</option>
+                    <option value="Bank/Mobile">Mobile Money</option>
+                    <option value="Credit">Credit (Debt)</option>
+                  </Select>
+                </HStack>
+
+                <HStack justifyContent="space-between" mt={4}>
+                   <Text fontSize="lg" fontWeight="bold">Grand Total (TZS):</Text>
+                   {/* EDITABLE TOTAL FIELD */}
+                   <NumberInput 
+                      size="lg" 
+                      w="200px" 
+                      value={manualTotal} 
+                      onChange={(valueString) => setManualTotal(valueString)}
+                    >
+                      <NumberInputField fontWeight="bold" textAlign="right" color="teal.600" />
+                   </NumberInput>
+                </HStack>
+                <Text fontSize="xs" color="gray.500" textAlign="right">
+                   (You can edit this amount manually)
+                </Text>
+
+                <Button 
+                  mt={4} 
+                  w="100%" 
+                  colorScheme="teal" 
+                  size="lg" 
+                  onClick={handleCheckout}
+                  isDisabled={cart.length === 0}
+                  isLoading={loading}
+                >
+                  Confirm Sale & Print
+                </Button>
+              </Box>
+            </CardBody>
+          </Card>
+        </VStack>
+
+      </HStack>
     </Box>
   )
 }

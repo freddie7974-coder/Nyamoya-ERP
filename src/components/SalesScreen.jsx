@@ -32,13 +32,15 @@ export default function SalesScreen() {
   
   const toast = useToast()
 
-  // --- 1. FETCH DATA ---
+  // --- 1. FETCH DATA (UPDATED to 'inventory') ---
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoadingData(true)
-        // Fetch Products
-        const prodSnapshot = await getDocs(collection(db, 'products'))
+        
+        // ✅ FIX 1: Changed 'products' to 'inventory' to match your screenshot
+        const prodSnapshot = await getDocs(collection(db, 'inventory'))
+        
         const prodList = prodSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
         setProducts(prodList)
         
@@ -58,7 +60,6 @@ export default function SalesScreen() {
   // --- 2. AUTO-CALCULATE TOTAL ---
   useEffect(() => {
     const calculated = cart.reduce((sum, item) => sum + item.price, 0)
-    // Only update if user hasn't typed a custom override, or if cart is empty, or matches calc
     if (manualTotal === '' || cart.length === 0 || Number(manualTotal) === calculated) {
         setManualTotal(calculated)
     }
@@ -66,9 +67,9 @@ export default function SalesScreen() {
 
   // --- 3. ADD TO CART ---
   const addToCart = (product) => {
-    // Logic: Are we selling 1 Unit or 12 Units (Carton)?
     const qtyMultiplier = isCartonMode ? 12 : 1
-    const unitPrice = product.sellingPrice || product.price || 0 // Fallback for price name
+    // Fallback: Check 'sellingPrice', then 'price', then 0
+    const unitPrice = product.sellingPrice || product.price || 0 
     const priceToAdd = unitPrice * qtyMultiplier
 
     setCart(prevCart => {
@@ -103,7 +104,6 @@ export default function SalesScreen() {
   const removeFromCart = (index) => {
     const newCart = cart.filter((_, i) => i !== index)
     setCart(newCart)
-    // Recalculate total immediately to avoid confusion
     const calculated = newCart.reduce((sum, item) => sum + item.price, 0)
     setManualTotal(calculated)
   }
@@ -161,7 +161,8 @@ export default function SalesScreen() {
 
       // Deduct Stock
       for (const item of cart) {
-        const productRef = doc(db, 'products', item.id)
+        // ✅ FIX 2: Changed 'products' to 'inventory' here too
+        const productRef = doc(db, 'inventory', item.id)
         const snap = await getDoc(productRef)
         if (snap.exists()) {
           const current = snap.data().currentStock || 0
@@ -172,7 +173,6 @@ export default function SalesScreen() {
       generateInvoice(saleData, docRef.id)
       toast({ title: "Sale Completed!", status: "success" })
       
-      // Reset
       setCart([])
       setManualTotal('')
       setCustomerName('')
@@ -188,7 +188,6 @@ export default function SalesScreen() {
   // --- RENDER ---
   return (
     <Box p={5} maxW="1600px" mx="auto">
-      {/* Header */}
       <HStack mb={6} justifyContent="space-between">
         <HStack>
             <ArrowBackIcon boxSize={6} color="gray.500" cursor="pointer" />
@@ -204,7 +203,6 @@ export default function SalesScreen() {
         {/* LEFT SIDE: INPUTS & PRODUCTS */}
         <VStack flex={2} w="100%" spacing={5} align="stretch">
           
-          {/* 1. Customer Selection */}
           <Box bg="white" p={4} borderRadius="lg" shadow="sm" border="1px solid" borderColor="gray.100">
             <Text mb={2} fontWeight="bold" color="gray.600">Select Customer</Text>
             <VStack spacing={3}>
@@ -215,7 +213,6 @@ export default function SalesScreen() {
             </VStack>
           </Box>
 
-          {/* 2. Carton Toggle Switch */}
           <HStack bg={isCartonMode ? "orange.50" : "teal.50"} p={4} borderRadius="lg" justifyContent="space-between" border="1px dashed" borderColor={isCartonMode ? "orange.300" : "teal.300"}>
             <VStack align="flex-start" spacing={0}>
                 <Text fontWeight="bold" fontSize="lg">
@@ -228,13 +225,12 @@ export default function SalesScreen() {
             <Switch size="lg" colorScheme="orange" isChecked={isCartonMode} onChange={() => setIsCartonMode(!isCartonMode)} />
           </HStack>
 
-          {/* 3. Product Grid (Restored Big Buttons) */}
           <Text fontWeight="bold" fontSize="lg" mt={2}>Products</Text>
           {loadingData ? (
              <Flex justify="center" p={10}><Spinner size="xl" /></Flex>
           ) : (
              <SimpleGrid columns={{ base: 1, sm: 2, md: 3 }} spacing={4}>
-                {products.length === 0 ? <Text>No products found in database.</Text> : products.map(product => (
+                {products.length === 0 ? <Text>No products found in 'inventory'.</Text> : products.map(product => (
                   <Button
                     key={product.id}
                     height="120px"
@@ -248,7 +244,6 @@ export default function SalesScreen() {
                   >
                     <Text fontSize="lg" fontWeight="bold" mb={1}>{product.name}</Text>
                     <Text fontSize="md" color="gray.600">
-                        {/* Display Price */}
                         TZS {(product.sellingPrice || product.price || 0).toLocaleString()} 
                     </Text>
                     {isCartonMode && <Badge mt={2} colorScheme="red" bg="red.100" color="red.700">Add 12 Pack</Badge>}
@@ -265,7 +260,6 @@ export default function SalesScreen() {
              <CardBody>
                <Heading size="md" mb={4} pb={2} borderBottom="1px solid #eee">Current Order</Heading>
                
-               {/* Cart Items List */}
                <Box maxH="400px" overflowY="auto" mb={4}>
                  {cart.length === 0 ? (
                     <Text color="gray.400" textAlign="center" py={10}>Cart is empty</Text>
@@ -291,7 +285,6 @@ export default function SalesScreen() {
 
                <Divider mb={4} />
 
-               {/* Payment Method */}
                <FormControl mb={4}>
                  <FormLabel fontSize="sm">Payment Method</FormLabel>
                  <Select size="sm" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
@@ -301,7 +294,6 @@ export default function SalesScreen() {
                  </Select>
                </FormControl>
 
-               {/* Editable Total Section */}
                <Box bg={isCartonMode ? "orange.50" : "teal.50"} p={4} borderRadius="md">
                  <HStack justifyContent="space-between" mb={2}>
                     <Text fontWeight="bold" fontSize="lg">TOTAL (TZS):</Text>
@@ -325,7 +317,6 @@ export default function SalesScreen() {
                  </Text>
                </Box>
 
-               {/* Checkout Button */}
                <Button 
                   mt={4} 
                   w="100%" 

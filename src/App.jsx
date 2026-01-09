@@ -7,7 +7,7 @@ import { doc, getDoc } from 'firebase/firestore'
 
 // 👇 AUTH & DASHBOARD
 import LoginScreen from './components/LoginScreen'
-import DashboardScreen from './components/DashboardScreen' // ✅ Renamed to match file
+import DashboardScreen from './components/DashboardScreen' // ✅ Matches your file name
 import NetworkStatus from './components/NetworkStatus' 
 
 // 👇 OPERATIONAL SCREENS
@@ -21,7 +21,7 @@ import WastageScreen from './components/WastageScreen'
 
 // 👇 ADMIN SCREENS
 import StockScreen from './components/StockScreen'
-import ExpenseScreen from './components/ExpenseScreen' // ✅ Fixed (Singular)
+import ExpenseScreen from './components/ExpenseScreen' // ✅ Singular Import (Matches the file we fixed)
 import CashBookScreen from './components/CashBookScreen'
 import RestockScreen from './components/RestockScreen'
 import AnalyticsScreen from './components/AnalyticsScreen'
@@ -38,7 +38,7 @@ function App() {
   const [currentScreen, setCurrentScreen] = useState('dashboard')
   const [loading, setLoading] = useState(true)
 
-  // 1. FIREBASE AUTH CHECK (Better than LocalStorage)
+  // 1. FIREBASE AUTH CHECK
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
@@ -106,8 +106,9 @@ function App() {
           )}
           
           {/* OPERATIONAL SCREENS */}
-          {/* ✅ Fixed: 'sales' instead of 'sale' to match Dashboard button */}
+          {/* ✅ FIX #1: 'sales' (Plural) to match Dashboard button */}
           {currentScreen === 'sales' && <SalesScreen onBack={() => setCurrentScreen('dashboard')} />}
+          
           {currentScreen === 'production' && <ProductionScreen onBack={() => setCurrentScreen('dashboard')} />}
           {currentScreen === 'delivery' && <DeliveryScreen onBack={() => setCurrentScreen('dashboard')} />}
 
@@ -116,7 +117,7 @@ function App() {
             <>
               {currentScreen === 'stock' && <StockScreen onBack={() => setCurrentScreen('dashboard')} />}
               
-              {/* ✅ Fixed: Checks for both 'expense' and 'expenses' to be safe */}
+              {/* ✅ FIX #2: 'expenses' (Plural) to match Dashboard button */}
               {(currentScreen === 'expense' || currentScreen === 'expenses') && (
                   <ExpenseScreen onBack={() => setCurrentScreen('dashboard')} />
               )}

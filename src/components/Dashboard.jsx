@@ -1,96 +1,111 @@
 // src/components/DashboardScreen.jsx
 import { useState, useEffect } from 'react'
-import {
+import { 
   Box, SimpleGrid, Stat, StatLabel, StatNumber, StatHelpText, StatArrow,
-  Heading, Text, Card, CardBody, Flex, Spinner, VStack, HStack,
-  Select, Badge, Button
+  Heading, Text, Button, VStack, HStack, Badge, Spinner, 
+  Alert, AlertIcon, AlertTitle, AlertDescription, Flex 
 } from '@chakra-ui/react'
-// ✅ FIXED: Removed unused ArrowUpIcon to prevent build error
-import { ArrowDownIcon, WarningIcon, CheckCircleIcon } from '@chakra-ui/icons'
 import { collection, getDocs } from 'firebase/firestore'
-import { db } from '../firebase'
+import { signOut } from 'firebase/auth' 
+import { db, auth } from '../firebase' 
 
-export default function DashboardScreen({ onNavigate }) {
+export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
   const [loading, setLoading] = useState(true)
   
-  // Financial Data
-  const [totalSales, setTotalSales] = useState(0)
-  const [totalExpenses, setTotalExpenses] = useState(0)
-  const [totalWastage, setTotalWastage] = useState(0)
-  const [netProfit, setNetProfit] = useState(0)
-  
+  // Financial Stats
+  const [financials, setFinancials] = useState({
+    sales: 0,
+    expenses: 0,
+    wastage: 0,
+    profit: 0
+  })
+
   // Stock Alerts
   const [lowStockItems, setLowStockItems] = useState([])
-  
-  // Filter State (Default to This Month)
-  const [timeRange, setTimeRange] = useState('month') 
 
   useEffect(() => {
     fetchDashboardData()
-  }, [timeRange])
+  }, [])
 
   const fetchDashboardData = async () => {
-    setLoading(true)
     try {
-      // 1. Define Time Filter
+      // 1. Define "This Month" Range
       const now = new Date()
-      let startDate = new Date('2000-01-01') 
-      
-      if (timeRange === 'month') {
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1)
-      } else if (timeRange === 'today') {
-        startDate = new Date(now.setHours(0,0,0,0))
-      }
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1) 
 
-      // 2. Fetch Sales
-      const salesSnap = await getDocs(collection(db, 'sales'))
-      let salesSum = 0
+      // 2. Fetch SALES (Income)
+      const salesSnap = await getDocs(collection(db, "sales"))
+      let totalSales = 0
       salesSnap.forEach(doc => {
         const data = doc.data()
-        // Safety check for date string
-        if (data.date && new Date(data.date) >= startDate) {
-           salesSum += Number(data.totalAmount) || 0
+        // Check date (handle both Firestore Timestamp and string dates)
+        let dateObj = null
+        if (data.timestamp) dateObj = data.timestamp.toDate()
+        else if (data.date) dateObj = new Date(data.date)
+
+        if (dateObj && dateObj >= startOfMonth) {
+          totalSales += Number(data.totalAmount || 0)
         }
       })
 
-      // 3. Fetch Expenses
-      const expSnap = await getDocs(collection(db, 'expenses'))
-      let expSum = 0
+      // 3. Fetch EXPENSES (Cost)
+      const expSnap = await getDocs(collection(db, "expenses"))
+      let totalExpenses = 0
       expSnap.forEach(doc => {
         const data = doc.data()
-        if (data.date && new Date(data.date) >= startDate) {
-            expSum += Number(data.amount) || 0
+        let dateObj = null
+        if (data.timestamp) dateObj = data.timestamp.toDate()
+        else if (data.date) dateObj = new Date(data.date)
+
+        if (dateObj && dateObj >= startOfMonth) {
+          totalExpenses += Number(data.amount || 0)
         }
       })
 
-      // 4. Fetch Wastage
-      const wasteSnap = await getDocs(collection(db, 'wastage'))
-      let wasteSum = 0
+      // 4. Fetch WASTAGE (Loss)
+      const wasteSnap = await getDocs(collection(db, "wastage"))
+      let totalWastage = 0
       wasteSnap.forEach(doc => {
         const data = doc.data()
-        if (data.date && new Date(data.date) >= startDate) {
-            wasteSum += Number(data.totalValue || data.cost || 0)
+        let dateObj = null
+        if (data.timestamp) dateObj = data.timestamp.toDate()
+        else if (data.date) dateObj = new Date(data.date)
+
+        if (dateObj && dateObj >= startOfMonth) {
+          // Use totalValue if available, or calculate cost * qty
+          totalWastage += Number(data.totalValue || data.cost || 0)
         }
       })
 
-      // 5. Fetch Low Stock
-      const invSnap = await getDocs(collection(db, 'inventory'))
-      const lowStock = []
-      invSnap.forEach(doc => {
-        const item = doc.data()
-        // Alert if stock is less than 20
-        if (Number(item.currentStock) < 20) {
-            // ✅ We save 'currentStock' into a variable called 'stock' here
-            lowStock.push({ name: item.name, stock: item.currentStock })
+      // 5. Fetch Low Stock Alerts
+      const lowItems = []
+      
+      // Check Raw Materials (< 20 units)
+      const rawSnap = await getDocs(collection(db, "raw_materials"))
+      rawSnap.forEach(doc => {
+        const data = doc.data()
+        if (Number(data.currentStock) < 20) {
+          lowItems.push({ name: data.name, stock: data.currentStock, type: 'Raw Material' })
         }
       })
 
-      // 6. Set States
-      setTotalSales(salesSum)
-      setTotalExpenses(expSum)
-      setTotalWastage(wasteSum)
-      setNetProfit(salesSum - (expSum + wasteSum))
-      setLowStockItems(lowStock)
+      // Check Finished Products (< 10 units)
+      const prodSnap = await getDocs(collection(db, "inventory"))
+      prodSnap.forEach(doc => {
+        const data = doc.data()
+        if (Number(data.currentStock) < 10) {
+          lowItems.push({ name: data.name, stock: data.currentStock, type: 'Product' })
+        }
+      })
+
+      // 6. Set State
+      setFinancials({
+        sales: totalSales,
+        expenses: totalExpenses,
+        wastage: totalWastage,
+        profit: totalSales - (totalExpenses + totalWastage)
+      })
+      setLowStockItems(lowItems)
 
     } catch (error) {
       console.error("Error loading dashboard:", error)
@@ -99,128 +114,165 @@ export default function DashboardScreen({ onNavigate }) {
     }
   }
 
-  const profitColor = netProfit >= 0 ? "green.500" : "red.500"
+  // Logout Function
+  const handleSignOut = async () => {
+    await signOut(auth) 
+    onLogout() 
+  }
 
   if (loading) return <Flex justify="center" p={10}><Spinner size="xl" /></Flex>
 
-  return (
-    <Box p={5} maxW="1600px" mx="auto">
-      
-      {/* HEADER & FILTER */}
-      <Flex justifyContent="space-between" alignItems="center" mb={6} flexDirection={{ base: 'column', md: 'row' }} gap={4}>
-        <VStack align="flex-start" spacing={0}>
-            <Heading size="lg" color="teal.700">Business Overview</Heading>
-            <Text color="gray.500">Performance Scorecard</Text>
-        </VStack>
-        <Select w="200px" value={timeRange} onChange={(e) => setTimeRange(e.target.value)} bg="white">
-            <option value="today">Today</option>
-            <option value="month">This Month</option>
-            <option value="all">All Time</option>
-        </Select>
-      </Flex>
+  // Helper for Profit Color
+  const profitColor = financials.profit >= 0 ? "green.600" : "red.600"
+  const profitBg = financials.profit >= 0 ? "green.50" : "red.50"
 
-      {/* 1. FINANCIAL CARDS */}
+  return (
+    <Box p={4} maxW="1200px" mx="auto">
+      
+      {/* HEADER */}
+      <HStack justifyContent="space-between" mb={6}>
+        <VStack align="start" spacing={0}>
+          <Heading size="lg" color="teal.700">Nyamoya ERP 🏭</Heading>
+          <Text color="gray.500">Welcome, {userRole === 'admin' ? 'Boss' : 'Staff'}!</Text>
+        </VStack>
+        
+        <HStack>
+          <Badge colorScheme="teal" p={2} borderRadius="md">
+            {new Date().toLocaleDateString()}
+          </Badge>
+          <Button size="sm" colorScheme="red" variant="outline" onClick={handleSignOut}>
+            Logout
+          </Button>
+        </HStack>
+      </HStack>
+
+      {/* 🚨 STOCK ALERTS */}
+      {lowStockItems.length > 0 && (
+        <Box mb={8}>
+          <Alert status="error" variant="left-accent" borderRadius="md" flexDirection="column" alignItems="start" p={4}>
+            <HStack mb={2}>
+              <AlertIcon boxSize="24px" />
+              <AlertTitle fontSize="lg">Action Required: Low Stock Detected!</AlertTitle>
+            </HStack>
+            <AlertDescription w="100%">
+              <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={3} mt={2}>
+                {lowStockItems.map((item, idx) => (
+                  <HStack key={idx} bg="red.50" p={2} borderRadius="md" justifyContent="space-between">
+                    <Text fontWeight="bold" color="red.700">{item.name}</Text>
+                    <Badge colorScheme="red">{item.stock} Left</Badge>
+                  </HStack>
+                ))}
+              </SimpleGrid>
+            </AlertDescription>
+          </Alert>
+        </Box>
+      )}
+
+      {/* 💰 FINANCIAL STATS (The Upgrade) */}
       <SimpleGrid columns={{ base: 1, md: 3 }} spacing={6} mb={8}>
         
-        {/* REVENUE CARD */}
-        <Card borderTop="4px solid" borderColor="green.400" boxShadow="md">
-            <CardBody>
-                <Stat>
-                    <StatLabel fontSize="lg" color="gray.500">Total Sales</StatLabel>
-                    <Flex alignItems="center">
-                        <CheckCircleIcon w={6} h={6} color="green.500" mr={2} />
-                        <StatNumber fontSize="3xl">{totalSales.toLocaleString()}</StatNumber>
-                    </Flex>
-                    <StatHelpText>Money In</StatHelpText>
-                </Stat>
-            </CardBody>
-        </Card>
+        {/* REVENUE */}
+        <Box p={6} bg="white" shadow="md" borderRadius="xl" borderLeft="4px solid" borderColor="green.400">
+          <Stat>
+            <StatLabel fontSize="lg" color="gray.500">Sales (This Month)</StatLabel>
+            <StatNumber fontSize="3xl" fontWeight="800" color="green.600">
+              {financials.sales.toLocaleString()}
+            </StatNumber>
+            <StatHelpText>Money In</StatHelpText>
+          </Stat>
+        </Box>
 
-        {/* EXPENSE CARD */}
-        <Card borderTop="4px solid" borderColor="red.400" boxShadow="md">
-            <CardBody>
-                <Stat>
-                    <StatLabel fontSize="lg" color="gray.500">Total Costs</StatLabel>
-                    <Flex alignItems="center">
-                        <ArrowDownIcon w={6} h={6} color="red.500" mr={2} />
-                        <StatNumber fontSize="3xl">{(totalExpenses + totalWastage).toLocaleString()}</StatNumber>
-                    </Flex>
-                    <StatHelpText fontSize="xs">
-                        Exp: {totalExpenses.toLocaleString()} | Waste: {totalWastage.toLocaleString()}
-                    </StatHelpText>
-                </Stat>
-            </CardBody>
-        </Card>
+        {/* EXPENSES */}
+        <Box p={6} bg="white" shadow="md" borderRadius="xl" borderLeft="4px solid" borderColor="red.400">
+          <Stat>
+            <StatLabel fontSize="lg" color="gray.500">Costs & Wastage</StatLabel>
+            <StatNumber fontSize="3xl" fontWeight="800" color="red.600">
+              {(financials.expenses + financials.wastage).toLocaleString()}
+            </StatNumber>
+            <StatHelpText>Money Out</StatHelpText>
+          </Stat>
+        </Box>
 
-        {/* PROFIT CARD */}
-        <Card bg={netProfit >= 0 ? "green.50" : "red.50"} border="1px solid" borderColor={netProfit >= 0 ? "green.200" : "red.200"} boxShadow="md">
-            <CardBody>
-                <Stat>
-                    <StatLabel fontSize="lg" fontWeight="bold" color={netProfit >= 0 ? "green.700" : "red.700"}>
-                        NET PROFIT
-                    </StatLabel>
-                    <Flex alignItems="center">
-                        <StatArrow type={netProfit >= 0 ? 'increase' : 'decrease'} />
-                        <StatNumber fontSize="3xl" color={profitColor}>
-                            {netProfit.toLocaleString()} TZS
-                        </StatNumber>
-                    </Flex>
-                    <StatHelpText fontWeight="bold">
-                        {netProfit >= 0 ? "You are making money! 🚀" : "You are losing money. ⚠️"}
-                    </StatHelpText>
-                </Stat>
-            </CardBody>
-        </Card>
-      </SimpleGrid>
-
-      {/* 2. LOWER SECTION: STOCK ALERTS & ACTIONS */}
-      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
-        
-        {/* LOW STOCK ALERT */}
-        <Card variant="outline">
-            <CardBody>
-                <Heading size="md" mb={4} display="flex" alignItems="center">
-                    <WarningIcon color="orange.500" mr={2} />
-                    Low Stock Alerts
-                </Heading>
-                {lowStockItems.length === 0 ? (
-                    <Text color="green.500" bg="green.50" p={2} borderRadius="md">✅ All stock levels are good.</Text>
-                ) : (
-                    <VStack align="stretch" spacing={2}>
-                        {lowStockItems.map((item, index) => (
-                            <HStack key={index} justify="space-between" p={2} bg="orange.50" borderRadius="md">
-                                <Text fontWeight="bold">{item.name}</Text>
-                                {/* ✅ FIXED: Using 'item.stock' (variable name) instead of 'item.currentStock' */}
-                                <Badge colorScheme="red">Only {item.stock} left</Badge>
-                            </HStack>
-                        ))}
-                    </VStack>
-                )}
-            </CardBody>
-        </Card>
-
-        {/* QUICK ACTIONS */}
-        <Card variant="outline">
-            <CardBody>
-                <Heading size="md" mb={4}>Quick Actions</Heading>
-                <SimpleGrid columns={2} spacing={4}>
-                    <Button h="60px" colorScheme="teal" onClick={() => onNavigate('sales')}>
-                        New Sale
-                    </Button>
-                    <Button h="60px" colorScheme="blue" variant="outline" onClick={() => onNavigate('production')}>
-                        Production
-                    </Button>
-                    <Button h="60px" colorScheme="orange" variant="outline" onClick={() => onNavigate('raw_materials')}>
-                        Restock
-                    </Button>
-                    <Button h="60px" colorScheme="red" variant="outline" onClick={() => onNavigate('expenses')}>
-                        Expenses
-                    </Button>
-                </SimpleGrid>
-            </CardBody>
-        </Card>
+        {/* NET PROFIT */}
+        <Box p={6} bg={profitBg} shadow="md" borderRadius="xl" borderLeft="4px solid" borderColor={financials.profit >= 0 ? "green.600" : "red.600"}>
+          <Stat>
+            <StatLabel fontSize="lg" fontWeight="bold" color="gray.600">NET PROFIT</StatLabel>
+            <Flex alignItems="center">
+                <StatArrow type={financials.profit >= 0 ? 'increase' : 'decrease'} />
+                <StatNumber fontSize="3xl" fontWeight="800" color={profitColor}>
+                  {financials.profit.toLocaleString()}
+                </StatNumber>
+            </Flex>
+            <StatHelpText fontWeight="bold">
+                {financials.profit >= 0 ? "You are making money! 🚀" : "Loss Alert ⚠️"}
+            </StatHelpText>
+          </Stat>
+        </Box>
 
       </SimpleGrid>
+
+      {/* 🚀 OPERATIONS MENU (The Colorful Buttons are Back!) */}
+      <Heading size="md" mb={4} color="gray.600">Operations</Heading>
+      <SimpleGrid columns={{ base: 2, md: 3, lg: 4 }} spacing={6}>
+        <MenuCard label="New Sale" color="teal" icon="💰" onClick={() => onNavigate('sales')} />
+        <MenuCard label="Production" color="orange" icon="🏭" onClick={() => onNavigate('production')} />
+        <MenuCard label="Delivery" color="cyan" icon="🚚" onClick={() => onNavigate('delivery')} />
+        {/* Only show HR if admin */}
+        {userRole === 'admin' && <MenuCard label="Staff (HR)" color="pink" icon="👥" onClick={() => onNavigate('hr')} />}
+      </SimpleGrid>
+
+      {/* 🛡️ ADMIN CONTROLS */}
+      {userRole === 'admin' && (
+        <>
+          <Heading size="md" mt={10} mb={4} color="gray.600">Admin Controls 🛡️</Heading>
+          <SimpleGrid columns={{ base: 2, md: 3, lg: 4 }} spacing={6} mb={10}>
+            
+            {/* Inventory */}
+            <MenuCard label="Raw Materials" color="green" icon="🥜" onClick={() => onNavigate('raw_materials')} />
+            <MenuCard label="Product Catalogue" color="purple" icon="📦" onClick={() => onNavigate('stock')} />
+            <MenuCard label="Expenses" color="red" icon="💸" onClick={() => onNavigate('expenses')} />
+            
+            {/* Reports */}
+            <MenuCard label="Analytics" color="blue" icon="📈" onClick={() => onNavigate('analytics')} />
+            <MenuCard label="Wastage" color="gray" icon="🗑️" onClick={() => onNavigate('wastage')} />
+            
+            {/* CRM & Partners */}
+            <MenuCard label="Customers" color="cyan" icon="🤝" onClick={() => onNavigate('customers')} />
+            <MenuCard label="Suppliers" color="orange" icon="🚛" onClick={() => onNavigate('suppliers')} />
+            
+            {/* System */}
+            <MenuCard label="Audit Logs" color="blackAlpha" icon="🛡️" onClick={() => onNavigate('audit')} />
+
+          </SimpleGrid>
+        </>
+      )}
+    </Box>
+  )
+}
+
+// 🎨 The Beautiful Menu Card Component
+function MenuCard({ label, color, icon, onClick }) {
+  return (
+    <Box 
+      as="button" 
+      onClick={onClick} 
+      p={6} 
+      bg="white" 
+      shadow="md" 
+      borderRadius="xl" 
+      transition="all 0.2s"
+      _hover={{ transform: 'translateY(-5px)', shadow: 'lg', bg: `${color}.50` }}
+      display="flex" 
+      flexDirection="column" 
+      alignItems="center" 
+      justifyContent="center" 
+      height="150px" 
+      width="100%"
+      borderBottom="4px solid"
+      borderColor={`${color}.200`}
+    >
+      <Text fontSize="4xl" mb={2}>{icon}</Text>
+      <Heading size="sm" color={`${color}.600`}>{label}</Heading>
     </Box>
   )
 }

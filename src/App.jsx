@@ -1,10 +1,16 @@
 // src/App.jsx
 import { useState, useEffect } from 'react'
-import { ChakraProvider, Box, Container } from '@chakra-ui/react' 
+import { ChakraProvider, Box, Container, Spinner, Center } from '@chakra-ui/react' 
+import { onAuthStateChanged } from 'firebase/auth'
+import { auth, db } from './firebase'
+import { doc, getDoc } from 'firebase/firestore'
 
-// 👇 IMPORTS
+// 👇 AUTH & DASHBOARD
 import LoginScreen from './components/LoginScreen'
-import Dashboard from './components/Dashboard'
+import DashboardScreen from './components/DashboardScreen' // ✅ Renamed to match file
+import NetworkStatus from './components/NetworkStatus' 
+
+// 👇 OPERATIONAL SCREENS
 import SalesScreen from './components/SalesScreen'
 import ProductionScreen from './components/ProductionScreen'
 import DeliveryScreen from './components/DeliveryScreen'
@@ -12,11 +18,10 @@ import HRScreen from './components/HRScreen'
 import CustomerScreen from './components/CustomerScreen'
 import SupplierScreen from './components/SupplierScreen'
 import WastageScreen from './components/WastageScreen'
-import NetworkStatus from './components/NetworkStatus' 
 
-// Admin Screens
+// 👇 ADMIN SCREENS
 import StockScreen from './components/StockScreen'
-import ExpensesScreen from './components/ExpensesScreen'
+import ExpenseScreen from './components/ExpenseScreen' // ✅ Fixed (Singular)
 import CashBookScreen from './components/CashBookScreen'
 import RestockScreen from './components/RestockScreen'
 import AnalyticsScreen from './components/AnalyticsScreen'
@@ -24,34 +29,57 @@ import RawMaterialScreen from './components/RawMaterialScreen'
 import DataExportScreen from './components/DataExportScreen' 
 import AuditLogScreen from './components/AuditLogScreen'
 import BalanceSheetScreen from './components/BalanceSheetScreen'
-import MonthlyReportScreen from './components/MonthlyReportScreen' // 👈 THIS WAS MISSING!
+import MonthlyReportScreen from './components/MonthlyReportScreen'
 import SystemToolsScreen from './components/SystemToolsScreen'
 
 function App() {
+  const [user, setUser] = useState(null)
   const [userRole, setUserRole] = useState(null)
   const [currentScreen, setCurrentScreen] = useState('dashboard')
+  const [loading, setLoading] = useState(true)
 
-  // 1. Check if already logged in
+  // 1. FIREBASE AUTH CHECK (Better than LocalStorage)
   useEffect(() => {
-    const savedRole = localStorage.getItem('nyamoya_role')
-    if (savedRole) setUserRole(savedRole)
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        // Fetch Role from Database
+        const docRef = doc(db, 'users', currentUser.uid)
+        const docSnap = await getDoc(docRef)
+        if (docSnap.exists()) {
+          setUserRole(docSnap.data().role)
+        } else {
+          setUserRole('staff') // Default fallback
+        }
+        setUser(currentUser)
+      } else {
+        setUser(null)
+        setUserRole(null)
+      }
+      setLoading(false)
+    })
+    return () => unsubscribe()
   }, [])
 
-  // 2. Login Handler
-  const handleLogin = (role) => {
-    setUserRole(role)
-    localStorage.setItem('nyamoya_role', role)
-  }
-
-  // 3. Logout Handler
+  // 2. Navigation Handlers
+  const handleLogin = () => setCurrentScreen('dashboard')
+  
   const handleLogout = () => {
+    setUser(null)
     setUserRole(null)
-    localStorage.removeItem('nyamoya_role')
-    setCurrentScreen('dashboard')
+    setCurrentScreen('login')
   }
 
-  // 4. Show Login if no user
-  if (!userRole) {
+  // 3. Loading State
+  if (loading) {
+    return (
+      <ChakraProvider>
+        <Center h="100vh"><Spinner size="xl" color="teal.500" /></Center>
+      </ChakraProvider>
+    )
+  }
+
+  // 4. Show Login if not authenticated
+  if (!user) {
     return (
       <ChakraProvider>
         <LoginScreen onLogin={handleLogin} />
@@ -59,22 +87,18 @@ function App() {
     )
   }
 
+  // 5. MAIN APP RENDER
   return (
     <ChakraProvider>
-      {/* 📡 OFFLINE BADGE: Sits on top of everything */}
+      {/* 📡 OFFLINE BADGE */}
       <NetworkStatus /> 
 
       <Box minH="100vh" bg="gray.50">
-        <Container 
-          maxW="container.xl" 
-          p={4} 
-          mx="auto" 
-          minH="100vh"
-        >
+        <Container maxW="container.xl" p={4} mx="auto" minH="100vh">
           
           {/* DASHBOARD */}
           {currentScreen === 'dashboard' && (
-            <Dashboard 
+            <DashboardScreen 
               userRole={userRole} 
               onNavigate={setCurrentScreen} 
               onLogout={handleLogout} 
@@ -82,7 +106,8 @@ function App() {
           )}
           
           {/* OPERATIONAL SCREENS */}
-          {currentScreen === 'sale' && <SalesScreen onBack={() => setCurrentScreen('dashboard')} />}
+          {/* ✅ Fixed: 'sales' instead of 'sale' to match Dashboard button */}
+          {currentScreen === 'sales' && <SalesScreen onBack={() => setCurrentScreen('dashboard')} />}
           {currentScreen === 'production' && <ProductionScreen onBack={() => setCurrentScreen('dashboard')} />}
           {currentScreen === 'delivery' && <DeliveryScreen onBack={() => setCurrentScreen('dashboard')} />}
 
@@ -90,7 +115,12 @@ function App() {
           {userRole === 'admin' && (
             <>
               {currentScreen === 'stock' && <StockScreen onBack={() => setCurrentScreen('dashboard')} />}
-              {currentScreen === 'expense' && <ExpensesScreen onBack={() => setCurrentScreen('dashboard')} />}
+              
+              {/* ✅ Fixed: Checks for both 'expense' and 'expenses' to be safe */}
+              {(currentScreen === 'expense' || currentScreen === 'expenses') && (
+                  <ExpenseScreen onBack={() => setCurrentScreen('dashboard')} />
+              )}
+              
               {currentScreen === 'cashbook' && <CashBookScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'restock' && <RestockScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'analytics' && <AnalyticsScreen onBack={() => setCurrentScreen('dashboard')} />}

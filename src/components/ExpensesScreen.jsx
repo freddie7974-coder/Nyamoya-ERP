@@ -1,32 +1,26 @@
-// src/components/ExpensesScreen.jsx
+// src/components/ExpenseScreen.jsx
 import { useState, useEffect } from 'react'
-import { Box, Button, Table, Thead, Tbody, Tr, Th, Td, Heading, HStack, Input, Select, useToast, Spinner, Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure, VStack, Text, Badge } from '@chakra-ui/react'
-import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, limit } from 'firebase/firestore'
+import {
+  Box, Button, VStack, HStack, Heading, Text, Input, Select,
+  Table, Thead, Tbody, Tr, Th, Td, IconButton, useToast,
+  Card, CardBody, FormControl, FormLabel, Spinner, Badge
+} from '@chakra-ui/react'
+import { DeleteIcon, ArrowBackIcon } from '@chakra-ui/icons'
+import { collection, addDoc, getDocs, deleteDoc, doc, serverTimestamp, orderBy, query } from 'firebase/firestore'
 import { db } from '../firebase'
-import { logAction } from '../utils/logger'
 
-export default function ExpensesScreen({ onBack }) {
+export default function ExpenseScreen({ onBack }) {
   const [expenses, setExpenses] = useState([])
   const [loading, setLoading] = useState(true)
-  const { isOpen, onOpen, onClose } = useDisclosure()
   
   // Form State
-  const [description, setDescription] = useState('')
   const [amount, setAmount] = useState('')
-  const [category, setCategory] = useState('')
+  const [description, setDescription] = useState('')
+  const [category, setCategory] = useState('Operating') // Operating, Raw Material, Salary, Other
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]) // Default to today
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const toast = useToast()
-
-  const categories = [
-    "Rent",
-    "Utilities (Electricity/Water)",
-    "Transport",
-    "Marketing",
-    "Salaries",
-    "Packaging",
-    "Repairs",
-    "Other"
-  ]
 
   // 1. Fetch Expenses
   useEffect(() => {
@@ -34,142 +28,199 @@ export default function ExpensesScreen({ onBack }) {
   }, [])
 
   const fetchExpenses = async () => {
+    setLoading(true)
     try {
-      // Get last 50 expenses, newest first
-      const q = query(collection(db, "expenses"), orderBy("date", "desc"), limit(50))
-      const querySnapshot = await getDocs(q)
-      const items = []
-      querySnapshot.forEach((doc) => {
-        items.push({ id: doc.id, ...doc.data() })
-      })
-      setExpenses(items)
+      // Get expenses ordered by date (newest first)
+      const q = query(collection(db, 'expenses'), orderBy('date', 'desc'))
+      const snapshot = await getDocs(q)
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      setExpenses(data)
     } catch (error) {
-      toast({ title: "Error loading expenses", status: "error" })
+      console.error("Error loading expenses:", error)
+      toast({ title: "Error loading data", status: "error" })
     } finally {
       setLoading(false)
     }
   }
 
-  // 2. Add New Operating Expense 💸
+  // 2. Add Expense
   const handleAddExpense = async () => {
-    if (!description || !amount || !category) {
-      toast({ title: "Please fill all fields", status: "warning" })
+    if (!amount || !description) {
+      toast({ title: "Please fill in amount and description", status: "warning" })
       return
     }
 
+    setIsSubmitting(true)
     try {
-      const expenseAmount = parseFloat(amount)
-
-      await addDoc(collection(db, "expenses"), {
+      const newExpense = {
+        amount: Number(amount),
         description,
-        amount: expenseAmount,
         category,
-        date: serverTimestamp(),
-        user: "Admin",
-        type: "Operating" // Tag it so we know it's not a Raw Material Purchase
-      })
+        date, // Uses the date picker value
+        timestamp: serverTimestamp(),
+        type: 'expense' // vital for analytics
+      }
 
-      await logAction('Admin', 'Expense Logged', `Paid TZS ${expenseAmount.toLocaleString()} for ${category} (${description})`)
-
+      await addDoc(collection(db, 'expenses'), newExpense)
+      
       toast({ title: "Expense Recorded", status: "success" })
       
-      setDescription('')
+      // Reset Form
       setAmount('')
-      setCategory('')
-      onClose()
+      setDescription('')
+      setCategory('Operating')
+      
+      // Refresh List
       fetchExpenses()
 
     } catch (error) {
       console.error(error)
-      toast({ title: "Error saving expense", status: "error" })
+      toast({ title: "Failed to save", status: "error" })
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
-  // Helper to color code categories
-  const getBadgeColor = (cat) => {
-    if (cat === 'Raw Materials') return 'blue'
-    if (cat === 'Salaries') return 'purple'
-    if (cat === 'Rent') return 'red'
-    return 'gray'
+  // 3. Delete Expense
+  const handleDelete = async (id) => {
+    if(!window.confirm("Are you sure you want to delete this expense?")) return
+    
+    try {
+      await deleteDoc(doc(db, 'expenses', id))
+      setExpenses(expenses.filter(e => e.id !== id))
+      toast({ title: "Deleted", status: "info" })
+    } catch (error) {
+      console.error(error)
+      toast({ title: "Delete failed", status: "error" })
+    }
   }
 
-  if (loading) return <Box p={10} textAlign="center"><Spinner size="xl" /></Box>
-
   return (
-    <Box p={4} maxW="1000px" mx="auto">
-      <HStack mb={6} justifyContent="space-between">
-        <HStack>
-          <Button onClick={onBack} variant="ghost">← Back</Button>
-          <Heading size="md" color="red.600">Expenses & Overhead 📉</Heading>
-        </HStack>
-        <Button colorScheme="red" onClick={onOpen}>+ Record Expense</Button>
+    <Box p={5} maxW="1200px" mx="auto">
+      {/* Header */}
+      <HStack mb={6}>
+        <ArrowBackIcon 
+            boxSize={6} 
+            color="gray.500" 
+            cursor="pointer" 
+            onClick={onBack} 
+            _hover={{ color: "teal.600" }}
+        />
+        <Heading size="lg" color="red.700">Expense Tracker</Heading>
       </HStack>
 
-      <Box bg="white" shadow="md" borderRadius="xl" overflow="hidden">
-        <Table variant="simple">
-          <Thead bg="gray.100">
-            <Tr>
-              <Th>Date</Th>
-              <Th>Description</Th>
-              <Th>Category</Th>
-              <Th isNumeric>Amount (TZS)</Th>
-            </Tr>
-          </Thead>
-          <Tbody>
-            {expenses.map((exp) => (
-              <Tr key={exp.id} _hover={{ bg: "gray.50" }}>
-                <Td fontSize="sm" color="gray.500">
-                  {exp.date?.toDate().toLocaleDateString()}
-                </Td>
-                <Td fontWeight="medium">{exp.description}</Td>
-                <Td>
-                  <Badge colorScheme={getBadgeColor(exp.category)}>{exp.category}</Badge>
-                </Td>
-                <Td isNumeric fontWeight="bold" color="red.500">
-                  - {exp.amount?.toLocaleString()}
-                </Td>
-              </Tr>
-            ))}
-            {expenses.length === 0 && (
-              <Tr><Td colSpan={4} textAlign="center" py={10}>No expenses recorded yet.</Td></Tr>
-            )}
-          </Tbody>
-        </Table>
-      </Box>
-
-      {/* Add Expense Modal */}
-      <Modal isOpen={isOpen} onClose={onClose} isCentered>
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>Record Operating Expense</ModalHeader>
-          <ModalBody>
+      <HStack alignItems="flex-start" spacing={8} flexDirection={{ base: 'column', md: 'row' }}>
+        
+        {/* LEFT: Add New Expense Form */}
+        <Card w={{ base: "100%", md: "40%" }} variant="outline" boxShadow="md">
+          <CardBody>
+            <Heading size="md" mb={4} color="gray.600">Record Spending</Heading>
+            
             <VStack spacing={4}>
-              <Box w="100%">
-                <Text mb={2} fontWeight="bold">Description</Text>
-                <Input placeholder="e.g. Paid Luku Token" value={description} onChange={(e) => setDescription(e.target.value)} />
-              </Box>
+              <FormControl>
+                <FormLabel>Amount (TZS)</FormLabel>
+                <Input 
+                    type="number" 
+                    placeholder="e.g. 50000" 
+                    value={amount} 
+                    onChange={(e) => setAmount(e.target.value)} 
+                    fontWeight="bold"
+                    color="red.600"
+                />
+              </FormControl>
 
-              <Box w="100%">
-                <Text mb={2} fontWeight="bold">Category</Text>
-                <Select placeholder="Select Category" value={category} onChange={(e) => setCategory(e.target.value)}>
-                  {categories.map((cat) => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
+              <FormControl>
+                <FormLabel>Description</FormLabel>
+                <Input 
+                    placeholder="e.g. Paid Electricity (LUKU)" 
+                    value={description} 
+                    onChange={(e) => setDescription(e.target.value)} 
+                />
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>Category</FormLabel>
+                <Select value={category} onChange={(e) => setCategory(e.target.value)}>
+                    <option value="Operating">Operating (Rent, Electricity, Water)</option>
+                    <option value="Raw Materials">Raw Materials (Emergency Purchase)</option>
+                    <option value="Salary">Staff Salary / Owner Draw</option>
+                    <option value="Transport">Transport / Delivery</option>
+                    <option value="Maintenance">Repairs & Maintenance</option>
+                    <option value="Other">Other</option>
                 </Select>
-              </Box>
+              </FormControl>
 
-              <Box w="100%">
-                <Text mb={2} fontWeight="bold">Amount (TZS)</Text>
-                <Input type="number" placeholder="e.g. 50000" value={amount} onChange={(e) => setAmount(e.target.value)} />
-              </Box>
+              <FormControl>
+                <FormLabel>Date Spent</FormLabel>
+                <Input 
+                    type="date" 
+                    value={date} 
+                    onChange={(e) => setDate(e.target.value)} 
+                />
+              </FormControl>
+
+              <Button 
+                colorScheme="red" 
+                w="100%" 
+                onClick={handleAddExpense} 
+                isLoading={isSubmitting}
+              >
+                Save Expense
+              </Button>
             </VStack>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="ghost" mr={3} onClick={onClose}>Cancel</Button>
-            <Button colorScheme="red" onClick={handleAddExpense}>Save Expense</Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+          </CardBody>
+        </Card>
+
+        {/* RIGHT: History List */}
+        <Box w={{ base: "100%", md: "60%" }}>
+          <Heading size="md" mb={4} color="gray.600">Recent Expenses</Heading>
+          
+          {loading ? (
+             <Spinner color="red.500" />
+          ) : (
+            <Box overflowX="auto">
+              <Table variant="simple" size="sm">
+                <Thead>
+                  <Tr>
+                    <Th>Date</Th>
+                    <Th>Details</Th>
+                    <Th isNumeric>Amount</Th>
+                    <Th></Th>
+                  </Tr>
+                </Thead>
+                <Tbody>
+                  {expenses.length === 0 ? (
+                    <Tr><Td colSpan={4} textAlign="center">No expenses recorded yet.</Td></Tr>
+                  ) : expenses.map((exp) => (
+                    <Tr key={exp.id}>
+                      <Td>{exp.date}</Td>
+                      <Td>
+                        <Text fontWeight="bold" fontSize="sm">{exp.description}</Text>
+                        <Badge colorScheme={exp.category === 'Raw Materials' ? 'orange' : 'gray'} fontSize="xs">
+                            {exp.category}
+                        </Badge>
+                      </Td>
+                      <Td isNumeric fontWeight="bold" color="red.600">
+                        {Number(exp.amount).toLocaleString()}
+                      </Td>
+                      <Td>
+                        <IconButton 
+                            icon={<DeleteIcon />} 
+                            size="xs" 
+                            colorScheme="red" 
+                            variant="ghost" 
+                            onClick={() => handleDelete(exp.id)}
+                        />
+                      </Td>
+                    </Tr>
+                  ))}
+                </Tbody>
+              </Table>
+            </Box>
+          )}
+        </Box>
+
+      </HStack>
     </Box>
   )
 }

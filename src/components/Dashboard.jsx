@@ -2,13 +2,13 @@
 import { useState, useEffect } from 'react'
 import {
   Box, SimpleGrid, Stat, StatLabel, StatNumber, StatHelpText, StatArrow,
-  Heading, Text, Card, CardBody, Flex, Spinner, Progress, Icon, VStack, HStack,
-  Select, Badge
+  Heading, Text, Card, CardBody, Flex, Spinner, VStack, HStack,
+  Select, Badge, Button
 } from '@chakra-ui/react'
-import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore'
+// ✅ FIXED: Removed unused ArrowUpIcon to prevent build error
+import { ArrowDownIcon, WarningIcon, CheckCircleIcon } from '@chakra-ui/icons'
+import { collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebase'
-// Icons
-import { FiTrendingUp, FiTrendingDown, FiDollarSign, FiAlertCircle } from 'react-icons/fi'
 
 export default function DashboardScreen({ onNavigate }) {
   const [loading, setLoading] = useState(true)
@@ -23,7 +23,7 @@ export default function DashboardScreen({ onNavigate }) {
   const [lowStockItems, setLowStockItems] = useState([])
   
   // Filter State (Default to This Month)
-  const [timeRange, setTimeRange] = useState('month') // 'all', 'month', 'today'
+  const [timeRange, setTimeRange] = useState('month') 
 
   useEffect(() => {
     fetchDashboardData()
@@ -34,13 +34,11 @@ export default function DashboardScreen({ onNavigate }) {
     try {
       // 1. Define Time Filter
       const now = new Date()
-      let startDate = new Date('2000-01-01') // Default: All time
+      let startDate = new Date('2000-01-01') 
       
       if (timeRange === 'month') {
-        // First day of current month
         startDate = new Date(now.getFullYear(), now.getMonth(), 1)
       } else if (timeRange === 'today') {
-        // Start of today
         startDate = new Date(now.setHours(0,0,0,0))
       }
 
@@ -49,42 +47,40 @@ export default function DashboardScreen({ onNavigate }) {
       let salesSum = 0
       salesSnap.forEach(doc => {
         const data = doc.data()
-        // Convert string date to Date object for comparison
-        if (new Date(data.date) >= startDate) {
+        // Safety check for date string
+        if (data.date && new Date(data.date) >= startDate) {
            salesSum += Number(data.totalAmount) || 0
         }
       })
 
-      // 3. Fetch Expenses (includes Raw Material Restocks if auto-logged)
+      // 3. Fetch Expenses
       const expSnap = await getDocs(collection(db, 'expenses'))
       let expSum = 0
       expSnap.forEach(doc => {
         const data = doc.data()
-        if (new Date(data.date) >= startDate) {
+        if (data.date && new Date(data.date) >= startDate) {
             expSum += Number(data.amount) || 0
         }
       })
 
-      // 4. Fetch Wastage (Money lost to sorting/bad peanuts)
-      // Note: We need to calculate Value (Qty * Cost)
+      // 4. Fetch Wastage
       const wasteSnap = await getDocs(collection(db, 'wastage'))
       let wasteSum = 0
       wasteSnap.forEach(doc => {
         const data = doc.data()
-        if (new Date(data.date) >= startDate) {
-            // If you saved 'cost' in wastage, use it. Otherwise assume 0 for now.
-            // Assuming your wastage collection has a 'totalValue' or 'cost' field
+        if (data.date && new Date(data.date) >= startDate) {
             wasteSum += Number(data.totalValue || data.cost || 0)
         }
       })
 
-      // 5. Fetch Low Stock (Inventory)
+      // 5. Fetch Low Stock
       const invSnap = await getDocs(collection(db, 'inventory'))
       const lowStock = []
       invSnap.forEach(doc => {
         const item = doc.data()
-        // Alert if stock is less than 20 units (You can change this number)
+        // Alert if stock is less than 20
         if (Number(item.currentStock) < 20) {
+            // ✅ We save 'currentStock' into a variable called 'stock' here
             lowStock.push({ name: item.name, stock: item.currentStock })
         }
       })
@@ -103,9 +99,7 @@ export default function DashboardScreen({ onNavigate }) {
     }
   }
 
-  // --- HELPERS FOR COLOR ---
   const profitColor = netProfit >= 0 ? "green.500" : "red.500"
-  const profitIcon = netProfit >= 0 ? FiTrendingUp : FiTrendingDown
 
   if (loading) return <Flex justify="center" p={10}><Spinner size="xl" /></Flex>
 
@@ -116,7 +110,7 @@ export default function DashboardScreen({ onNavigate }) {
       <Flex justifyContent="space-between" alignItems="center" mb={6} flexDirection={{ base: 'column', md: 'row' }} gap={4}>
         <VStack align="flex-start" spacing={0}>
             <Heading size="lg" color="teal.700">Business Overview</Heading>
-            <Text color="gray.500">How is the business performing?</Text>
+            <Text color="gray.500">Performance Scorecard</Text>
         </VStack>
         <Select w="200px" value={timeRange} onChange={(e) => setTimeRange(e.target.value)} bg="white">
             <option value="today">Today</option>
@@ -134,10 +128,10 @@ export default function DashboardScreen({ onNavigate }) {
                 <Stat>
                     <StatLabel fontSize="lg" color="gray.500">Total Sales</StatLabel>
                     <Flex alignItems="center">
-                        <Icon as={FiDollarSign} w={6} h={6} color="green.500" mr={2} />
+                        <CheckCircleIcon w={6} h={6} color="green.500" mr={2} />
                         <StatNumber fontSize="3xl">{totalSales.toLocaleString()}</StatNumber>
                     </Flex>
-                    <StatHelpText>Money collected from customers</StatHelpText>
+                    <StatHelpText>Money In</StatHelpText>
                 </Stat>
             </CardBody>
         </Card>
@@ -148,12 +142,11 @@ export default function DashboardScreen({ onNavigate }) {
                 <Stat>
                     <StatLabel fontSize="lg" color="gray.500">Total Costs</StatLabel>
                     <Flex alignItems="center">
-                        <Icon as={FiTrendingDown} w={6} h={6} color="red.500" mr={2} />
+                        <ArrowDownIcon w={6} h={6} color="red.500" mr={2} />
                         <StatNumber fontSize="3xl">{(totalExpenses + totalWastage).toLocaleString()}</StatNumber>
                     </Flex>
-                    <StatHelpText>
-                        Expenses: {totalExpenses.toLocaleString()} <br/> 
-                        Wastage: {totalWastage.toLocaleString()}
+                    <StatHelpText fontSize="xs">
+                        Exp: {totalExpenses.toLocaleString()} | Waste: {totalWastage.toLocaleString()}
                     </StatHelpText>
                 </Stat>
             </CardBody>
@@ -187,7 +180,7 @@ export default function DashboardScreen({ onNavigate }) {
         <Card variant="outline">
             <CardBody>
                 <Heading size="md" mb={4} display="flex" alignItems="center">
-                    <Icon as={FiAlertCircle} color="orange.500" mr={2} />
+                    <WarningIcon color="orange.500" mr={2} />
                     Low Stock Alerts
                 </Heading>
                 {lowStockItems.length === 0 ? (
@@ -197,6 +190,7 @@ export default function DashboardScreen({ onNavigate }) {
                         {lowStockItems.map((item, index) => (
                             <HStack key={index} justify="space-between" p={2} bg="orange.50" borderRadius="md">
                                 <Text fontWeight="bold">{item.name}</Text>
+                                {/* ✅ FIXED: Using 'item.stock' (variable name) instead of 'item.currentStock' */}
                                 <Badge colorScheme="red">Only {item.stock} left</Badge>
                             </HStack>
                         ))}
@@ -214,13 +208,13 @@ export default function DashboardScreen({ onNavigate }) {
                         New Sale
                     </Button>
                     <Button h="60px" colorScheme="blue" variant="outline" onClick={() => onNavigate('production')}>
-                        Record Production
+                        Production
                     </Button>
                     <Button h="60px" colorScheme="orange" variant="outline" onClick={() => onNavigate('raw_materials')}>
-                        Restock Materials
+                        Restock
                     </Button>
                     <Button h="60px" colorScheme="red" variant="outline" onClick={() => onNavigate('expenses')}>
-                        Add Expense
+                        Expenses
                     </Button>
                 </SimpleGrid>
             </CardBody>

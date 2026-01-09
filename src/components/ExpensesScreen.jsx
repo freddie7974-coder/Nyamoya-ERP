@@ -16,13 +16,31 @@ export default function ExpenseScreen({ onBack }) {
   // Form State
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
-  const [category, setCategory] = useState('Operating') // Operating, Raw Material, Salary, Other
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]) // Default to today
+  const [category, setCategory] = useState('Operating') 
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]) 
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const toast = useToast()
 
-  // 1. Fetch Expenses
+  // --- HELPER: SAFE DATE FORMATTER (The Fix for Error #31) ---
+  const formatExpenseDate = (dateVal) => {
+    if (!dateVal) return '-'
+    
+    // Case 1: It's a Firestore Timestamp (Object with seconds)
+    if (dateVal.seconds) {
+      return new Date(dateVal.seconds * 1000).toLocaleDateString()
+    }
+    
+    // Case 2: It's a standard JS Date object
+    if (dateVal instanceof Date) {
+        return dateVal.toLocaleDateString()
+    }
+
+    // Case 3: It's already a String (e.g., "2024-05-20")
+    return dateVal
+  }
+  // -----------------------------------------------------------
+
   useEffect(() => {
     fetchExpenses()
   }, [])
@@ -30,7 +48,6 @@ export default function ExpenseScreen({ onBack }) {
   const fetchExpenses = async () => {
     setLoading(true)
     try {
-      // Get expenses ordered by date (newest first)
       const q = query(collection(db, 'expenses'), orderBy('date', 'desc'))
       const snapshot = await getDocs(q)
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
@@ -43,7 +60,6 @@ export default function ExpenseScreen({ onBack }) {
     }
   }
 
-  // 2. Add Expense
   const handleAddExpense = async () => {
     if (!amount || !description) {
       toast({ title: "Please fill in amount and description", status: "warning" })
@@ -56,21 +72,17 @@ export default function ExpenseScreen({ onBack }) {
         amount: Number(amount),
         description,
         category,
-        date, // Uses the date picker value
+        date, // This saves as a STRING from the input
         timestamp: serverTimestamp(),
-        type: 'expense' // vital for analytics
+        type: 'expense'
       }
 
       await addDoc(collection(db, 'expenses'), newExpense)
-      
       toast({ title: "Expense Recorded", status: "success" })
       
-      // Reset Form
       setAmount('')
       setDescription('')
       setCategory('Operating')
-      
-      // Refresh List
       fetchExpenses()
 
     } catch (error) {
@@ -81,10 +93,8 @@ export default function ExpenseScreen({ onBack }) {
     }
   }
 
-  // 3. Delete Expense
   const handleDelete = async (id) => {
     if(!window.confirm("Are you sure you want to delete this expense?")) return
-    
     try {
       await deleteDoc(doc(db, 'expenses', id))
       setExpenses(expenses.filter(e => e.id !== id))
@@ -97,7 +107,6 @@ export default function ExpenseScreen({ onBack }) {
 
   return (
     <Box p={5} maxW="1200px" mx="auto">
-      {/* Header */}
       <HStack mb={6}>
         <ArrowBackIcon 
             boxSize={6} 
@@ -193,7 +202,8 @@ export default function ExpenseScreen({ onBack }) {
                     <Tr><Td colSpan={4} textAlign="center">No expenses recorded yet.</Td></Tr>
                   ) : expenses.map((exp) => (
                     <Tr key={exp.id}>
-                      <Td>{exp.date}</Td>
+                      {/* ✅ THE FIX: We use the helper function here */}
+                      <Td>{formatExpenseDate(exp.date)}</Td>
                       <Td>
                         <Text fontWeight="bold" fontSize="sm">{exp.description}</Text>
                         <Badge colorScheme={exp.category === 'Raw Materials' ? 'orange' : 'gray'} fontSize="xs">

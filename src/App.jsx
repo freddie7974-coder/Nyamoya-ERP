@@ -7,7 +7,7 @@ import { doc, getDoc } from 'firebase/firestore'
 
 // 👇 AUTH & DASHBOARD
 import LoginScreen from './components/LoginScreen'
-import DashboardScreen from './components/DashboardScreen'
+import DashboardScreen from './components/DashboardScreen' // ✅ WORKS: Matches your new filename!
 import NetworkStatus from './components/NetworkStatus' 
 
 // 👇 OPERATIONAL SCREENS
@@ -18,7 +18,7 @@ import HRScreen from './components/HRScreen'
 
 // 👇 ADMIN SCREENS
 import StockScreen from './components/StockScreen'
-import ExpensesScreen from './components/ExpensesScreen' // Ensure file is named ExpensesScreen.jsx (Plural)
+import ExpensesScreen from './components/ExpensesScreen' // Ensure file is "ExpensesScreen.jsx"
 import CashBookScreen from './components/CashBookScreen'
 import RestockScreen from './components/RestockScreen'
 import AnalyticsScreen from './components/AnalyticsScreen'
@@ -29,7 +29,7 @@ import BalanceSheetScreen from './components/BalanceSheetScreen'
 import MonthlyReportScreen from './components/MonthlyReportScreen'
 import SystemToolsScreen from './components/SystemToolsScreen'
 import WastageScreen from './components/WastageScreen'
-import SuppliersScreen from './components/SuppliersScreen' // Ensure file is named SuppliersScreen.jsx (Plural)
+import SuppliersScreen from './components/SuppliersScreen' // Ensure file is "SuppliersScreen.jsx"
 
 function App() {
   const [user, setUser] = useState(null)
@@ -110,7 +110,7 @@ function App() {
             <>
               {currentScreen === 'stock' && <StockScreen onBack={() => setCurrentScreen('dashboard')} />}
               
-              {/* Handles both singular/plural typing to be safe */}
+              {/* SAFETY: Handles 'expense' AND 'expenses' */}
               {(currentScreen === 'expense' || currentScreen === 'expenses') && (
                   <ExpensesScreen onBack={() => setCurrentScreen('dashboard')} />
               )}
@@ -118,6 +118,7 @@ function App() {
               {currentScreen === 'raw_materials' && <RawMaterialScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'restock' && <RestockScreen onBack={() => setCurrentScreen('dashboard')} />}
               
+              {/* SAFETY: Handles 'supplier' AND 'suppliers' */}
               {(currentScreen === 'supplier' || currentScreen === 'suppliers') && (
                    <SuppliersScreen onBack={() => setCurrentScreen('dashboard')} />
               )}
@@ -125,8 +126,7 @@ function App() {
               {currentScreen === 'monthly_report' && <MonthlyReportScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'system_tools' && <SystemToolsScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'wastage' && <WastageScreen onBack={() => setCurrentScreen('dashboard')} />}
-
-              {/* 👇 I HAVE UNCOMMENTED THESE SO YOUR BUTTONS WORK */}
+              
               {currentScreen === 'cashbook' && <CashBookScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'analytics' && <AnalyticsScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'export' && <DataExportScreen onBack={() => setCurrentScreen('dashboard')} />}

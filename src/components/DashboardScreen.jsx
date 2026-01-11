@@ -38,12 +38,12 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
       let totalSales = 0
       salesSnap.forEach(doc => {
         const data = doc.data()
-        // Check date (handle both Firestore Timestamp and string dates)
         let dateObj = null
         if (data.timestamp) dateObj = data.timestamp.toDate()
         else if (data.date) dateObj = new Date(data.date)
 
-        if (dateObj && dateObj >= startOfMonth) {
+        // Safety: If no date found, count it anyway to ensure profit isn't 0
+        if (!dateObj || dateObj >= startOfMonth) {
           totalSales += Number(data.totalAmount || 0)
         }
       })
@@ -57,8 +57,9 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
         if (data.timestamp) dateObj = data.timestamp.toDate()
         else if (data.date) dateObj = new Date(data.date)
 
-        if (dateObj && dateObj >= startOfMonth) {
-          totalExpenses += Number(data.amount || 0)
+        // Safety: Added check for 'cost' field as well as 'amount'
+        if (!dateObj || dateObj >= startOfMonth) {
+          totalExpenses += Number(data.amount || data.cost || 0)
         }
       })
 
@@ -71,8 +72,7 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
         if (data.timestamp) dateObj = data.timestamp.toDate()
         else if (data.date) dateObj = new Date(data.date)
 
-        if (dateObj && dateObj >= startOfMonth) {
-          // Use totalValue if available, or calculate cost * qty
+        if (!dateObj || dateObj >= startOfMonth) {
           totalWastage += Number(data.totalValue || data.cost || 0)
         }
       })
@@ -80,7 +80,6 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
       // 5. Fetch Low Stock Alerts
       const lowItems = []
       
-      // Check Raw Materials (< 20 units)
       const rawSnap = await getDocs(collection(db, "raw_materials"))
       rawSnap.forEach(doc => {
         const data = doc.data()
@@ -89,7 +88,6 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
         }
       })
 
-      // Check Finished Products (< 10 units)
       const prodSnap = await getDocs(collection(db, "inventory"))
       prodSnap.forEach(doc => {
         const data = doc.data()
@@ -114,7 +112,6 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
     }
   }
 
-  // Logout Function
   const handleSignOut = async () => {
     await signOut(auth) 
     onLogout() 
@@ -122,7 +119,6 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
 
   if (loading) return <Flex justify="center" p={10}><Spinner size="xl" /></Flex>
 
-  // Helper for Profit Color
   const profitColor = financials.profit >= 0 ? "green.600" : "red.600"
   const profitBg = financials.profit >= 0 ? "green.50" : "red.50"
 
@@ -168,32 +164,28 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
         </Box>
       )}
 
-      {/* 💰 FINANCIAL STATS (The Upgrade) */}
+      {/* 💰 FINANCIAL STATS */}
       <SimpleGrid columns={{ base: 1, md: 3 }} spacing={6} mb={8}>
-        
-        {/* REVENUE */}
         <Box p={6} bg="white" shadow="md" borderRadius="xl" borderLeft="4px solid" borderColor="green.400">
           <Stat>
             <StatLabel fontSize="lg" color="gray.500">Sales (This Month)</StatLabel>
             <StatNumber fontSize="3xl" fontWeight="800" color="green.600">
               {financials.sales.toLocaleString()}
             </StatNumber>
-            <StatHelpText>Money In</StatHelpText>
+            <StatHelpText>Total Revenue</StatHelpText>
           </Stat>
         </Box>
 
-        {/* EXPENSES */}
         <Box p={6} bg="white" shadow="md" borderRadius="xl" borderLeft="4px solid" borderColor="red.400">
           <Stat>
-            <StatLabel fontSize="lg" color="gray.500">Costs & Wastage</StatLabel>
+            <StatLabel fontSize="lg" color="gray.500">Total Costs</StatLabel>
             <StatNumber fontSize="3xl" fontWeight="800" color="red.600">
               {(financials.expenses + financials.wastage).toLocaleString()}
             </StatNumber>
-            <StatHelpText>Money Out</StatHelpText>
+            <StatHelpText>Expenses + Wastage</StatHelpText>
           </Stat>
         </Box>
 
-        {/* NET PROFIT */}
         <Box p={6} bg={profitBg} shadow="md" borderRadius="xl" borderLeft="4px solid" borderColor={financials.profit >= 0 ? "green.600" : "red.600"}>
           <Stat>
             <StatLabel fontSize="lg" fontWeight="bold" color="gray.600">NET PROFIT</StatLabel>
@@ -204,20 +196,18 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
                 </StatNumber>
             </Flex>
             <StatHelpText fontWeight="bold">
-                {financials.profit >= 0 ? "You are making money! 🚀" : "Loss Alert ⚠️"}
+                {financials.profit >= 0 ? "Profit Tracking Well 🚀" : "Loss Detected ⚠️"}
             </StatHelpText>
           </Stat>
         </Box>
-
       </SimpleGrid>
 
-      {/* 🚀 OPERATIONS MENU (The Colorful Buttons are Back!) */}
+      {/* 🚀 OPERATIONS MENU */}
       <Heading size="md" mb={4} color="gray.600">Operations</Heading>
       <SimpleGrid columns={{ base: 2, md: 3, lg: 4 }} spacing={6}>
         <MenuCard label="New Sale" color="teal" icon="💰" onClick={() => onNavigate('sales')} />
         <MenuCard label="Production" color="orange" icon="🏭" onClick={() => onNavigate('production')} />
         <MenuCard label="Delivery" color="cyan" icon="🚚" onClick={() => onNavigate('delivery')} />
-        {/* Only show HR if admin */}
         {userRole === 'admin' && <MenuCard label="Staff (HR)" color="pink" icon="👥" onClick={() => onNavigate('hr')} />}
       </SimpleGrid>
 
@@ -226,23 +216,13 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
         <>
           <Heading size="md" mt={10} mb={4} color="gray.600">Admin Controls 🛡️</Heading>
           <SimpleGrid columns={{ base: 2, md: 3, lg: 4 }} spacing={6} mb={10}>
-            
-            {/* Inventory */}
             <MenuCard label="Raw Materials" color="green" icon="🥜" onClick={() => onNavigate('raw_materials')} />
-            <MenuCard label="Product Catalogue" color="purple" icon="📦" onClick={() => onNavigate('stock')} />
+            <MenuCard label="Inventory" color="purple" icon="📦" onClick={() => onNavigate('stock')} />
             <MenuCard label="Expenses" color="red" icon="💸" onClick={() => onNavigate('expense')} />
-            
-            {/* Reports */}
             <MenuCard label="Analytics" color="blue" icon="📈" onClick={() => onNavigate('analytics')} />
             <MenuCard label="Wastage" color="gray" icon="🗑️" onClick={() => onNavigate('wastage')} />
-            
-            {/* CRM & Partners */}
-            <MenuCard label="Customers" color="cyan" icon="🤝" onClick={() => onNavigate('customers')} />
             <MenuCard label="Suppliers" color="orange" icon="🚛" onClick={() => onNavigate('suppliers')} />
-            
-            {/* System */}
             <MenuCard label="Audit Logs" color="blackAlpha" icon="🛡️" onClick={() => onNavigate('audit')} />
-
           </SimpleGrid>
         </>
       )}
@@ -250,7 +230,6 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
   )
 }
 
-// 🎨 The Beautiful Menu Card Component
 function MenuCard({ label, color, icon, onClick }) {
   return (
     <Box 
@@ -266,13 +245,13 @@ function MenuCard({ label, color, icon, onClick }) {
       flexDirection="column" 
       alignItems="center" 
       justifyContent="center" 
-      height="150px" 
+      height="140px" 
       width="100%"
       borderBottom="4px solid"
       borderColor={`${color}.200`}
     >
-      <Text fontSize="4xl" mb={2}>{icon}</Text>
-      <Heading size="sm" color={`${color}.600`}>{label}</Heading>
+      <Text fontSize="3xl" mb={2}>{icon}</Text>
+      <Heading size="xs" textAlign="center" color={`${color}.600`}>{label}</Heading>
     </Box>
   )
 }

@@ -1,219 +1,239 @@
+// src/components/CustomerScreen.jsx
 import { useState, useEffect } from 'react'
-import {
-  Box, Button, Heading, Table, Thead, Tbody, Tr, Th, Td,
-  Input, VStack, HStack, IconButton, useToast, Spinner,
-  Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody,
-  ModalFooter, ModalCloseButton, useDisclosure, FormControl,
-  FormLabel, Avatar, Text, Badge, Card, CardBody, InputGroup, InputLeftElement
+import { 
+  Box, Button, Table, Thead, Tbody, Tr, Th, Td, Heading, HStack, Input, 
+  useToast, Spinner, Modal, ModalOverlay, ModalContent, ModalHeader, 
+  ModalBody, ModalFooter, useDisclosure, VStack, Text, Badge, IconButton, Tooltip,
+  Alert, AlertIcon 
 } from '@chakra-ui/react'
-import { ArrowBackIcon, DeleteIcon, AddIcon, SearchIcon, PhoneIcon, EmailIcon } from '@chakra-ui/icons'
-import { collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, serverTimestamp } from 'firebase/firestore'
+import { DeleteIcon, EditIcon, ArrowBackIcon } from '@chakra-ui/icons' 
+import { collection, getDocs, addDoc, serverTimestamp, query, orderBy, deleteDoc, doc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 
-export default function CustomersScreen({ onBack }) {
+export default function CustomerScreen({ onBack }) {
   const [customers, setCustomers] = useState([])
   const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [isSubmitting, setIsSubmitting] = useState(false)
-
+  const { isOpen, onOpen, onClose } = useDisclosure()
+  
   // Form State
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
-  const [email, setEmail] = useState('')
-  const [address, setAddress] = useState('')
+  const [location, setLocation] = useState('')
+  
+  // Edit Mode State
+  const [isEditing, setIsEditing] = useState(false)
+  const [currentCustomerId, setCurrentCustomerId] = useState(null)
 
-  const { isOpen, onOpen, onClose } = useDisclosure()
   const toast = useToast()
 
+  // 1. Fetch Customers
   useEffect(() => {
     fetchCustomers()
   }, [])
 
   const fetchCustomers = async () => {
-    setLoading(true)
     try {
-      const q = query(collection(db, 'customers'), orderBy('name', 'asc'))
-      const snapshot = await getDocs(q)
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-      setCustomers(data)
+      // 🛡️ SAFETY: We removed 'orderBy' temporarily to prevent index crashes
+      const q = query(collection(db, "customers")) 
+      const querySnapshot = await getDocs(q)
+      const list = []
+      querySnapshot.forEach((doc) => {
+        list.push({ id: doc.id, ...doc.data() })
+      })
+      
+      // Sort manually to be safe
+      list.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      
+      setCustomers(list)
     } catch (error) {
-      console.error("Error loading customers:", error)
-      toast({ title: "Error loading data", status: "error" })
+      console.error("Fetch Error:", error)
+      toast({ title: "Error loading customers", description: error.message, status: "error" })
     } finally {
       setLoading(false)
     }
   }
 
-  const handleAddCustomer = async () => {
+  // Helper: Open Modal for Adding
+  const openAddModal = () => {
+    setIsEditing(false)
+    setName('')
+    setPhone('')
+    setLocation('')
+    onOpen()
+  }
+
+  // Helper: Open Modal for Editing
+  const openEditModal = (customer) => {
+    setIsEditing(true)
+    setCurrentCustomerId(customer.id)
+    setName(customer.name || '')
+    setPhone(customer.phone || '')
+    setLocation(customer.location || '')
+    onOpen()
+  }
+
+  // 2. Save (Add or Update)
+  const handleSave = async () => {
     if (!name || !phone) {
       toast({ title: "Name and Phone are required", status: "warning" })
       return
     }
-    setIsSubmitting(true)
+
     try {
-      await addDoc(collection(db, 'customers'), {
-        name,
-        phone,
-        email,
-        address,
-        createdAt: serverTimestamp(),
-        totalPurchases: 0 // You can link this to sales later!
-      })
-      toast({ title: "Customer Added!", status: "success" })
+      if (isEditing) {
+        // UPDATE Existing Customer
+        const customerRef = doc(db, "customers", currentCustomerId)
+        await updateDoc(customerRef, {
+          name,
+          phone,
+          location: location || 'Dar es Salaam'
+        })
+        toast({ title: "Customer Updated! ✅", status: "success" })
+      } else {
+        // ADD New Customer
+        await addDoc(collection(db, "customers"), {
+          name,
+          phone,
+          location: location || 'Dar es Salaam',
+          totalSpent: 0, 
+          joinedDate: serverTimestamp()
+        })
+        toast({ title: "Customer Added! 🎉", status: "success" })
+      }
+
       onClose()
-      clearForm()
+      fetchCustomers() // Refresh list
+
+    } catch (error) {
+      console.error(error)
+      toast({ title: "Error saving customer", status: "error" })
+    }
+  }
+
+  // 3. Delete Customer
+  const handleDelete = async (id) => {
+    if (!window.confirm("Are you sure you want to delete this customer?")) return
+
+    try {
+      await deleteDoc(doc(db, "customers", id))
+      toast({ title: "Customer Deleted", status: "info" })
       fetchCustomers()
     } catch (error) {
-      console.error(error)
-      toast({ title: "Error saving", status: "error" })
-    } finally {
-      setIsSubmitting(false)
+      toast({ title: "Error deleting customer", status: "error" })
     }
   }
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("Delete this customer?")) return
-    try {
-      await deleteDoc(doc(db, 'customers', id))
-      setCustomers(customers.filter(c => c.id !== id))
-      toast({ title: "Deleted", status: "info" })
-    } catch (error) {
-      console.error(error)
-    }
+  // 🛡️ SAFETY FUNCTION: Prevents crashes on bad numbers
+  const safeCurrency = (val) => {
+    if (typeof val === 'number') return val.toLocaleString()
+    if (!val) return '0'
+    // If it's a string like "10000", try to convert
+    const num = Number(val)
+    return isNaN(num) ? '0' : num.toLocaleString()
   }
 
-  const clearForm = () => {
-    setName('')
-    setPhone('')
-    setEmail('')
-    setAddress('')
-  }
-
-  // Filter Logic
-  const filteredCustomers = customers.filter(c => 
-    c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.phone.includes(searchTerm)
-  )
+  if (loading) return <Box p={10} textAlign="center"><Spinner size="xl" /></Box>
 
   return (
-    <Box p={5} maxW="1200px" mx="auto">
-      {/* HEADER */}
+    <Box p={4} maxW="1000px" mx="auto">
       <HStack mb={6} justifyContent="space-between">
         <HStack>
-          <IconButton icon={<ArrowBackIcon />} onClick={onBack} variant="ghost" aria-label="Back" />
-          <Heading size="lg" color="cyan.700">Customer CRM 🤝</Heading>
+          <Button onClick={onBack} leftIcon={<ArrowBackIcon />} variant="ghost">Back</Button>
+          <Heading size="md" color="blue.600">Customer Directory 👥</Heading>
         </HStack>
-        <Button leftIcon={<AddIcon />} colorScheme="cyan" onClick={onOpen}>
-          Add Customer
-        </Button>
+        <Button colorScheme="blue" onClick={openAddModal}>+ Add Customer</Button>
       </HStack>
 
-      {/* SEARCH BAR */}
-      <Card mb={6} variant="outline">
-        <CardBody py={4}>
-          <InputGroup>
-            <InputLeftElement pointerEvents="none"><SearchIcon color="gray.300" /></InputLeftElement>
-            <Input 
-              placeholder="Search by Name or Phone Number..." 
-              value={searchTerm} 
-              onChange={(e) => setSearchTerm(e.target.value)} 
-            />
-          </InputGroup>
-        </CardBody>
-      </Card>
-
-      {/* CUSTOMER LIST */}
-      {loading ? (
-        <Spinner size="xl" color="cyan.500" />
-      ) : (
-        <Box bg="white" shadow="sm" borderRadius="lg" overflowX="auto">
-          <Table variant="simple">
-            <Thead bg="gray.50">
-              <Tr>
-                <Th>Customer</Th>
-                <Th>Contact Info</Th>
-                <Th>Location</Th>
-                <Th>Since</Th>
-                <Th>Actions</Th>
+      <Box bg="white" shadow="md" borderRadius="xl" overflow="hidden">
+        <Table variant="simple">
+          <Thead bg="gray.100">
+            <Tr>
+              <Th>Name</Th>
+              <Th>Phone</Th>
+              <Th>Location</Th>
+              <Th isNumeric>Total Spent</Th>
+              <Th>Status</Th>
+              <Th>Actions</Th>
+            </Tr>
+          </Thead>
+          <Tbody>
+            {customers.map((cust) => (
+              <Tr key={cust.id} _hover={{ bg: "gray.50" }}>
+                <Td fontWeight="bold">{cust.name || 'Unknown'}</Td>
+                <Td>{cust.phone || '-'}</Td>
+                <Td>{cust.location || '-'}</Td>
+                <Td isNumeric fontWeight="bold" color="green.600">
+                  TZS {safeCurrency(cust.totalSpent)}
+                </Td>
+                <Td>
+                  {Number(cust.totalSpent || 0) > 100000 ? (
+                    <Badge colorScheme="purple">VIP 👑</Badge>
+                  ) : (
+                    <Badge colorScheme="gray">New</Badge>
+                  )}
+                </Td>
+                <Td>
+                  <HStack spacing={2}>
+                    <Tooltip label="Edit Customer">
+                      <IconButton 
+                        icon={<EditIcon />} 
+                        size="sm" 
+                        colorScheme="blue" 
+                        variant="outline"
+                        onClick={() => openEditModal(cust)}
+                        aria-label="Edit"
+                      />
+                    </Tooltip>
+                    <Tooltip label="Delete Customer">
+                      <IconButton 
+                        icon={<DeleteIcon />} 
+                        size="sm" 
+                        colorScheme="red" 
+                        variant="outline"
+                        onClick={() => handleDelete(cust.id)}
+                        aria-label="Delete"
+                      />
+                    </Tooltip>
+                  </HStack>
+                </Td>
               </Tr>
-            </Thead>
-            <Tbody>
-              {filteredCustomers.map((c) => (
-                <Tr key={c.id}>
-                  <Td>
-                    <HStack>
-                      <Avatar size="sm" name={c.name} bg="cyan.500" />
-                      <Text fontWeight="bold">{c.name}</Text>
-                    </HStack>
-                  </Td>
-                  <Td>
-                    <VStack align="start" spacing={1}>
-                      <HStack><Icon as={PhoneIcon} color="gray.400" /><Text fontSize="sm">{c.phone}</Text></HStack>
-                      {c.email && <HStack><Icon as={EmailIcon} color="gray.400" /><Text fontSize="sm">{c.email}</Text></HStack>}
-                    </VStack>
-                  </Td>
-                  <Td>{c.address || '-'}</Td>
-                  <Td fontSize="sm" color="gray.500">
-                    {c.createdAt ? new Date(c.createdAt.seconds * 1000).toLocaleDateString() : 'Old Entry'}
-                  </Td>
-                  <Td>
-                    <IconButton 
-                      icon={<DeleteIcon />} 
-                      size="sm" 
-                      colorScheme="red" 
-                      variant="ghost" 
-                      onClick={() => handleDelete(c.id)}
-                    />
-                  </Td>
-                </Tr>
-              ))}
-              {filteredCustomers.length === 0 && (
-                <Tr>
-                  <Td colSpan={5} textAlign="center" py={10} color="gray.500">
-                    No customers found.
-                  </Td>
-                </Tr>
-              )}
-            </Tbody>
-          </Table>
-        </Box>
-      )}
+            ))}
+            {customers.length === 0 && (
+              <Tr><Td colSpan={6} textAlign="center" py={10}>No customers yet. Add your first one!</Td></Tr>
+            )}
+          </Tbody>
+        </Table>
+      </Box>
 
-      {/* ADD CUSTOMER MODAL */}
-      <Modal isOpen={isOpen} onClose={onClose}>
+      {/* Add/Edit Customer Modal */}
+      <Modal isOpen={isOpen} onClose={onClose} isCentered>
         <ModalOverlay />
         <ModalContent>
-          <ModalHeader>Add New Customer</ModalHeader>
-          <ModalCloseButton />
+          <ModalHeader>{isEditing ? "Edit Customer" : "Add New Customer"}</ModalHeader>
           <ModalBody>
             <VStack spacing={4}>
-              <FormControl isRequired>
-                <FormLabel>Name</FormLabel>
-                <Input placeholder="John Doe" value={name} onChange={(e) => setName(e.target.value)} />
-              </FormControl>
-              <FormControl isRequired>
-                <FormLabel>Phone Number</FormLabel>
-                <Input type="tel" placeholder="07..." value={phone} onChange={(e) => setPhone(e.target.value)} />
-              </FormControl>
-              <FormControl>
-                <FormLabel>Email (Optional)</FormLabel>
-                <Input type="email" placeholder="john@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-              </FormControl>
-              <FormControl>
-                <FormLabel>Address / Location</FormLabel>
-                <Input placeholder="e.g. Town Center, Shop 4" value={address} onChange={(e) => setAddress(e.target.value)} />
-              </FormControl>
+              <Box w="100%">
+                <Text mb={2} fontWeight="bold">Full Name</Text>
+                <Input placeholder="e.g. Mama John" value={name} onChange={(e) => setName(e.target.value)} />
+              </Box>
+              <Box w="100%">
+                <Text mb={2} fontWeight="bold">Phone Number</Text>
+                <Input placeholder="e.g. 0712 345 678" value={phone} onChange={(e) => setPhone(e.target.value)} />
+              </Box>
+              <Box w="100%">
+                <Text mb={2} fontWeight="bold">Location / Shop Name</Text>
+                <Input placeholder="e.g. Kariakoo Market" value={location} onChange={(e) => setLocation(e.target.value)} />
+              </Box>
             </VStack>
           </ModalBody>
           <ModalFooter>
             <Button variant="ghost" mr={3} onClick={onClose}>Cancel</Button>
-            <Button colorScheme="cyan" onClick={handleAddCustomer} isLoading={isSubmitting}>
-              Save Customer
+            <Button colorScheme="blue" onClick={handleSave}>
+              {isEditing ? "Update Customer" : "Save Customer"}
             </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
-
     </Box>
   )
 }

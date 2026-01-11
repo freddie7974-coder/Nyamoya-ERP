@@ -7,7 +7,7 @@ import { doc, getDoc } from 'firebase/firestore'
 
 // 👇 AUTH & DASHBOARD
 import LoginScreen from './components/LoginScreen'
-import DashboardScreen from './components/DashboardScreen' // ✅ WORKS: Matches your new filename!
+import DashboardScreen from './components/DashboardScreen' 
 import NetworkStatus from './components/NetworkStatus' 
 
 // 👇 OPERATIONAL SCREENS
@@ -18,7 +18,7 @@ import HRScreen from './components/HRScreen'
 
 // 👇 ADMIN SCREENS
 import StockScreen from './components/StockScreen'
-import ExpensesScreen from './components/ExpensesScreen' // Ensure file is "ExpensesScreen.jsx"
+import ExpensesScreen from './components/ExpensesScreen' 
 import CashBookScreen from './components/CashBookScreen'
 import RestockScreen from './components/RestockScreen'
 import AnalyticsScreen from './components/AnalyticsScreen'
@@ -29,7 +29,7 @@ import BalanceSheetScreen from './components/BalanceSheetScreen'
 import MonthlyReportScreen from './components/MonthlyReportScreen'
 import SystemToolsScreen from './components/SystemToolsScreen'
 import WastageScreen from './components/WastageScreen'
-import SuppliersScreen from './components/SuppliersScreen' // Ensure file is "SuppliersScreen.jsx"
+import SuppliersScreen from './components/SuppliersScreen' 
 
 function App() {
   const [user, setUser] = useState(null)
@@ -40,12 +40,17 @@ function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
-        const docRef = doc(db, 'users', currentUser.uid)
-        const docSnap = await getDoc(docRef)
-        if (docSnap.exists()) {
-          setUserRole(docSnap.data().role)
+        // 👇 ADMIN OVERRIDE FOR THE OWNER
+        if (currentUser.email === 'freddie7974@gmail.com') {
+           setUserRole('admin');
         } else {
-          setUserRole('staff') 
+           const docRef = doc(db, 'users', currentUser.uid)
+           const docSnap = await getDoc(docRef)
+           if (docSnap.exists()) {
+             setUserRole(docSnap.data().role)
+           } else {
+             setUserRole('staff') 
+           }
         }
         setUser(currentUser)
       } else {
@@ -88,7 +93,6 @@ function App() {
       <Box minH="100vh" bg="gray.50">
         <Container maxW="container.xl" p={4} mx="auto" minH="100vh">
           
-          {/* DASHBOARD */}
           {currentScreen === 'dashboard' && (
             <DashboardScreen 
               userRole={userRole} 
@@ -97,28 +101,26 @@ function App() {
             />
           )}
           
-          {/* OPERATIONAL SCREENS */}
           {currentScreen === 'sales' && <SalesScreen onBack={() => setCurrentScreen('dashboard')} />}
           {currentScreen === 'production' && <ProductionScreen onBack={() => setCurrentScreen('dashboard')} />}
           {currentScreen === 'delivery' && <DeliveryScreen onBack={() => setCurrentScreen('dashboard')} />}
           
-          {/* Only Admin can see HR */}
           {userRole === 'admin' && currentScreen === 'hr' && <HRScreen onBack={() => setCurrentScreen('dashboard')} />}
 
-          {/* ADMIN ONLY SCREENS */}
           {userRole === 'admin' && (
             <>
               {currentScreen === 'stock' && <StockScreen onBack={() => setCurrentScreen('dashboard')} />}
               
-              {/* SAFETY: Handles 'expense' AND 'expenses' */}
               {(currentScreen === 'expense' || currentScreen === 'expenses') && (
                   <ExpensesScreen onBack={() => setCurrentScreen('dashboard')} />
               )}
               
-              {currentScreen === 'raw_materials' && <RawMaterialScreen onBack={() => setCurrentScreen('dashboard')} />}
+              {(currentScreen === 'raw_materials' || currentScreen === 'raw_material') && (
+                  <RawMaterialScreen onBack={() => setCurrentScreen('dashboard')} />
+              )}
+
               {currentScreen === 'restock' && <RestockScreen onBack={() => setCurrentScreen('dashboard')} />}
               
-              {/* SAFETY: Handles 'supplier' AND 'suppliers' */}
               {(currentScreen === 'supplier' || currentScreen === 'suppliers') && (
                    <SuppliersScreen onBack={() => setCurrentScreen('dashboard')} />
               )}
@@ -126,7 +128,6 @@ function App() {
               {currentScreen === 'monthly_report' && <MonthlyReportScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'system_tools' && <SystemToolsScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'wastage' && <WastageScreen onBack={() => setCurrentScreen('dashboard')} />}
-              
               {currentScreen === 'cashbook' && <CashBookScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'analytics' && <AnalyticsScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'export' && <DataExportScreen onBack={() => setCurrentScreen('dashboard')} />}

@@ -29,7 +29,8 @@ import BalanceSheetScreen from './components/BalanceSheetScreen'
 import MonthlyReportScreen from './components/MonthlyReportScreen'
 import SystemToolsScreen from './components/SystemToolsScreen'
 import WastageScreen from './components/WastageScreen'
-import SuppliersScreen from './components/SuppliersScreen' 
+import SuppliersScreen from './components/SuppliersScreen'
+import CustomerScreen from './components/CustomerScreen' // ✅ Added this for you
 
 function App() {
   const [user, setUser] = useState(null)
@@ -122,8 +123,13 @@ function App() {
               {currentScreen === 'restock' && <RestockScreen onBack={() => setCurrentScreen('dashboard')} />}
               
               {(currentScreen === 'supplier' || currentScreen === 'suppliers') && (
-                   <SuppliersScreen onBack={() => setCurrentScreen('dashboard')} />
+                    <SuppliersScreen onBack={() => setCurrentScreen('dashboard')} />
               )}
+              
+             {/* Listens for 'customers' from the Dashboard, but renders YOUR file */}
+             {(currentScreen === 'customer' || currentScreen === 'customers') && (
+                 <CustomerScreen onBack={() => setCurrentScreen('dashboard')} />
+            )}
               
               {currentScreen === 'monthly_report' && <MonthlyReportScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'system_tools' && <SystemToolsScreen onBack={() => setCurrentScreen('dashboard')} />}
@@ -133,7 +139,8 @@ function App() {
               {currentScreen === 'export' && <DataExportScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'audit' && <AuditLogScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'balance_sheet' && <BalanceSheetScreen onBack={() => setCurrentScreen('dashboard')} />}
-              {currentScreen === 'export' && <DataExportScreen onBack={() => setCurrentScreen('dashboard')} />}
+              
+              {/* 🗑️ Deleted the duplicate DataExportScreen line here */}
             </>
           )}
 

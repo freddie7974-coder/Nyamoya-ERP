@@ -142,7 +142,6 @@ export default function DataExportScreen({ onBack }) {
 
       // DECIDE FORMAT
       if (format === 'pdf') {
-        // Create a nice title from the filename (e.g. "Nyamoya_Sales" -> "Sales Report")
         const prettyTitle = filename.replace('Nyamoya_', '').replace(/([A-Z])/g, ' $1').trim() + " Report"
         generatePDF(rawData, prettyTitle, filename)
       } else {

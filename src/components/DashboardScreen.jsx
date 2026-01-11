@@ -277,6 +277,7 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
             <MenuCard label="Customers" color="cyan" icon="🤝" onClick={() => onNavigate('customers')} />
             <MenuCard label="Suppliers" color="orange" icon="🚛" onClick={() => onNavigate('suppliers')} />
             <MenuCard label="Audit Logs" color="blackAlpha" icon="🛡️" onClick={() => onNavigate('audit')} />
+            <MenuCard label="Data Export" color="blue" icon="💾" onClick={() => onNavigate('export')} />
           </SimpleGrid>
         </>
       )}

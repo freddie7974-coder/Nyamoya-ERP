@@ -133,6 +133,7 @@ function App() {
               {currentScreen === 'export' && <DataExportScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'audit' && <AuditLogScreen onBack={() => setCurrentScreen('dashboard')} />}
               {currentScreen === 'balance_sheet' && <BalanceSheetScreen onBack={() => setCurrentScreen('dashboard')} />}
+              {currentScreen === 'export' && <DataExportScreen onBack={() => setCurrentScreen('dashboard')} />}
             </>
           )}
 

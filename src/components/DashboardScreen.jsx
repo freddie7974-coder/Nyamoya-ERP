@@ -1,3 +1,4 @@
+// src/components/DashboardScreen.jsx
 import { useState, useEffect } from 'react'
 import { 
   Box, SimpleGrid, Stat, StatLabel, StatNumber, StatHelpText, StatArrow,
@@ -11,7 +12,7 @@ import { db, auth } from '../firebase'
 export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
   const [loading, setLoading] = useState(true)
   
-  // Financial Stats State
+  // Financial Stats
   const [financials, setFinancials] = useState({
     sales: 0,
     expenses: 0,
@@ -19,8 +20,18 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
     profit: 0
   })
 
-  // Stock Alerts State
   const [lowStockItems, setLowStockItems] = useState([])
+
+  // 🧹 CLEANER: Removes commas and ensures it's a number
+  // Turns "1,500" -> 1500 and "TZS 500" -> 500
+  const safeNumber = (val) => {
+    if (!val) return 0
+    // If it's already a number, return it
+    if (typeof val === 'number') return val
+    // If it's a string, remove commas and non-math characters
+    const cleanString = String(val).replace(/,/g, '').replace(/[^0-9.-]+/g,"")
+    return Number(cleanString) || 0
+  }
 
   useEffect(() => {
     fetchDashboardData()
@@ -28,113 +39,55 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
 
   const fetchDashboardData = async () => {
     try {
-      // 1. Define "This Month" Range
-      const now = new Date()
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1) 
-
-      // -----------------------------------------
-      // 2. Fetch SALES (Income)
-      // -----------------------------------------
+      // 1. Fetch SALES (All Time)
       const salesSnap = await getDocs(collection(db, "sales"))
       let totalSales = 0
-      
       salesSnap.forEach(doc => {
         const data = doc.data()
-        
-        // Date Check: Handle both Firestore Timestamp and string dates
-        let dateObj = null
-        if (data.timestamp && typeof data.timestamp.toDate === 'function') {
-          dateObj = data.timestamp.toDate()
-        } else if (data.date) {
-          dateObj = new Date(data.date)
-        }
-
-        // Calculation
-        // If date exists, check if it's this month. If no date, count it anyway (safety).
-        if (!dateObj || dateObj >= startOfMonth) {
-           // Checks for 'totalAmount' OR 'amount' OR 'total'
-           totalSales += Number(data.totalAmount || data.amount || data.total || 0)
-        }
+        // Checks 'totalAmount' OR 'amount' OR 'total'
+        totalSales += safeNumber(data.totalAmount || data.amount || data.total)
       })
 
-      // -----------------------------------------
-      // 3. Fetch EXPENSES (Cost)
-      // -----------------------------------------
+      // 2. Fetch EXPENSES (All Time)
       const expSnap = await getDocs(collection(db, "expenses"))
       let totalExpenses = 0
-      
       expSnap.forEach(doc => {
         const data = doc.data()
-        
-        // Date Check
-        let dateObj = null
-        if (data.timestamp && typeof data.timestamp.toDate === 'function') {
-          dateObj = data.timestamp.toDate()
-        } else if (data.date) {
-          dateObj = new Date(data.date)
-        }
-
-        if (!dateObj || dateObj >= startOfMonth) {
-          // 🚨 UNIVERSAL FIX: Checks 'amount', 'cost', OR 'total'
-          // This ensures it finds the number regardless of field name
-          totalExpenses += Number(data.amount || data.cost || data.total || 0)
-        }
+        // Checks 'amount', 'cost', OR 'total'
+        totalExpenses += safeNumber(data.amount || data.cost || data.total)
       })
 
-      // -----------------------------------------
-      // 4. Fetch WASTAGE (Loss)
-      // -----------------------------------------
+      // 3. Fetch WASTAGE (All Time)
       const wasteSnap = await getDocs(collection(db, "wastage"))
       let totalWastage = 0
-      
       wasteSnap.forEach(doc => {
         const data = doc.data()
-        
-        // Date Check
-        let dateObj = null
-        if (data.timestamp && typeof data.timestamp.toDate === 'function') {
-          dateObj = data.timestamp.toDate()
-        } else if (data.date) {
-          dateObj = new Date(data.date)
-        }
-
-        if (!dateObj || dateObj >= startOfMonth) {
-          totalWastage += Number(data.totalValue || data.cost || 0)
-        }
+        totalWastage += safeNumber(data.totalValue || data.cost)
       })
 
-      // -----------------------------------------
-      // 5. Fetch Low Stock Alerts
-      // -----------------------------------------
+      // 4. Low Stock Alerts
       const lowItems = []
-      
-      // Check Raw Materials (< 20 units)
       const rawSnap = await getDocs(collection(db, "raw_materials"))
       rawSnap.forEach(doc => {
         const data = doc.data()
-        // Force number conversion
-        if (Number(data.currentStock) < 20) {
+        if (safeNumber(data.currentStock) < 20) {
           lowItems.push({ name: data.name, stock: data.currentStock, type: 'Raw Material' })
         }
       })
 
-      // Check Finished Products (< 10 units)
       const prodSnap = await getDocs(collection(db, "inventory"))
       prodSnap.forEach(doc => {
         const data = doc.data()
-        if (Number(data.currentStock) < 10) {
+        if (safeNumber(data.currentStock) < 10) {
           lowItems.push({ name: data.name, stock: data.currentStock, type: 'Product' })
         }
       })
 
-      // -----------------------------------------
-      // 6. Update State
-      // -----------------------------------------
+      // 5. Update State
       setFinancials({
         sales: totalSales,
         expenses: totalExpenses,
         wastage: totalWastage,
-        // Profit = Sales - (Expenses + Wastage)
         profit: totalSales - (totalExpenses + totalWastage)
       })
       setLowStockItems(lowItems)
@@ -146,23 +99,13 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
     }
   }
 
-  // Logout Function
   const handleSignOut = async () => {
-    try {
-      await signOut(auth) 
-      onLogout()
-    } catch (error) {
-      console.error("Logout failed", error)
-    }
+    await signOut(auth) 
+    onLogout() 
   }
 
-  if (loading) return (
-    <Flex justify="center" align="center" h="50vh">
-      <Spinner size="xl" color="teal.500" thickness="4px" />
-    </Flex>
-  )
+  if (loading) return <Flex justify="center" p={10}><Spinner size="xl" color="teal.500" /></Flex>
 
-  // Logic for Profit Color (Green if positive, Red if negative)
   const isProfit = financials.profit >= 0
   const profitColor = isProfit ? "green.600" : "red.600"
   const profitBg = isProfit ? "green.50" : "red.50"
@@ -170,35 +113,32 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
   return (
     <Box p={4} maxW="1200px" mx="auto">
       
-      {/* HEADER SECTION */}
-      <HStack justifyContent="space-between" mb={6} flexWrap="wrap" spacing={4}>
+      {/* HEADER */}
+      <HStack justifyContent="space-between" mb={6}>
         <VStack align="start" spacing={0}>
           <Heading size="lg" color="teal.700">Nyamoya ERP 🏭</Heading>
           <Text color="gray.500">Welcome, {userRole === 'admin' ? 'Boss' : 'Staff'}!</Text>
         </VStack>
-        
         <HStack>
-          <Badge colorScheme="teal" p={2} borderRadius="md" fontSize="0.9em">
-            📅 {new Date().toLocaleDateString()}
+          <Badge colorScheme="teal" p={2} borderRadius="md">
+            {new Date().toLocaleDateString()}
           </Badge>
-          <Button size="sm" colorScheme="red" variant="outline" onClick={handleSignOut}>
-            Logout
-          </Button>
+          <Button size="sm" colorScheme="red" variant="outline" onClick={handleSignOut}>Logout</Button>
         </HStack>
       </HStack>
 
-      {/* 🚨 LOW STOCK ALERTS */}
+      {/* 🚨 STOCK ALERTS */}
       {lowStockItems.length > 0 && (
         <Box mb={8}>
-          <Alert status="error" variant="left-accent" borderRadius="md" flexDirection="column" alignItems="start" p={4} shadow="sm">
+          <Alert status="error" variant="left-accent" borderRadius="md" flexDirection="column" alignItems="start" p={4}>
             <HStack mb={2}>
               <AlertIcon boxSize="24px" />
-              <AlertTitle fontSize="lg">Action Required: Low Stock Detected!</AlertTitle>
+              <AlertTitle fontSize="lg">Low Stock Warning!</AlertTitle>
             </HStack>
             <AlertDescription w="100%">
               <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={3} mt={2}>
                 {lowStockItems.map((item, idx) => (
-                  <HStack key={idx} bg="white" p={2} borderRadius="md" justifyContent="space-between" border="1px solid" borderColor="red.100">
+                  <HStack key={idx} bg="white" p={2} borderRadius="md" border="1px solid" borderColor="red.100" justifyContent="space-between">
                     <Text fontWeight="bold" color="red.700">{item.name}</Text>
                     <Badge colorScheme="red">{item.stock} Left</Badge>
                   </HStack>
@@ -209,28 +149,28 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
         </Box>
       )}
 
-      {/* 💰 FINANCIAL STATS CARDS */}
+      {/* 💰 FINANCIAL STATS */}
       <SimpleGrid columns={{ base: 1, md: 3 }} spacing={6} mb={8}>
         
         {/* REVENUE */}
         <Box p={6} bg="white" shadow="md" borderRadius="xl" borderLeft="4px solid" borderColor="green.400">
           <Stat>
-            <StatLabel fontSize="lg" color="gray.500">Sales (This Month)</StatLabel>
+            <StatLabel fontSize="lg" color="gray.500">Total Sales (Lifetime)</StatLabel>
             <StatNumber fontSize="3xl" fontWeight="800" color="green.600">
-              KSh {financials.sales.toLocaleString()}
+              TZS {financials.sales.toLocaleString()}
             </StatNumber>
-            <StatHelpText>Total Income</StatHelpText>
+            <StatHelpText>All Income</StatHelpText>
           </Stat>
         </Box>
 
         {/* EXPENSES */}
         <Box p={6} bg="white" shadow="md" borderRadius="xl" borderLeft="4px solid" borderColor="red.400">
           <Stat>
-            <StatLabel fontSize="lg" color="gray.500">Total Costs</StatLabel>
+            <StatLabel fontSize="lg" color="gray.500">Total Costs (Lifetime)</StatLabel>
             <StatNumber fontSize="3xl" fontWeight="800" color="red.600">
-              KSh {(financials.expenses + financials.wastage).toLocaleString()}
+              TZS {(financials.expenses + financials.wastage).toLocaleString()}
             </StatNumber>
-            <StatHelpText>Expenses + Wastage</StatHelpText>
+            <StatHelpText>All Expenses + Wastage</StatHelpText>
           </Stat>
         </Box>
 
@@ -241,11 +181,11 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
             <Flex alignItems="center">
                 <StatArrow type={isProfit ? 'increase' : 'decrease'} />
                 <StatNumber fontSize="3xl" fontWeight="800" color={profitColor}>
-                  KSh {financials.profit.toLocaleString()}
+                  TZS {financials.profit.toLocaleString()}
                 </StatNumber>
             </Flex>
             <StatHelpText fontWeight="bold">
-                {isProfit ? "Great Job! 🚀" : "Check Expenses ⚠️"}
+                {isProfit ? "Business is Profitable 🚀" : "Check Expenses ⚠️"}
             </StatHelpText>
           </Stat>
         </Box>
@@ -261,27 +201,18 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
         {userRole === 'admin' && <MenuCard label="Staff (HR)" color="pink" icon="👥" onClick={() => onNavigate('hr')} />}
       </SimpleGrid>
 
-      {/* 🛡️ ADMIN CONTROLS (Only visible to Admin) */}
+      {/* 🛡️ ADMIN CONTROLS */}
       {userRole === 'admin' && (
         <>
           <Heading size="md" mt={10} mb={4} color="gray.600">Admin Controls 🛡️</Heading>
           <SimpleGrid columns={{ base: 2, md: 3, lg: 4 }} spacing={6} mb={10}>
-            
-            {/* Inventory */}
             <MenuCard label="Raw Materials" color="green" icon="🥜" onClick={() => onNavigate('raw_materials')} />
             <MenuCard label="Product Stock" color="purple" icon="📦" onClick={() => onNavigate('stock')} />
             <MenuCard label="Expenses" color="red" icon="💸" onClick={() => onNavigate('expense')} />
-            
-            {/* Reports */}
             <MenuCard label="Analytics" color="blue" icon="📈" onClick={() => onNavigate('analytics')} />
             <MenuCard label="Wastage" color="gray" icon="🗑️" onClick={() => onNavigate('wastage')} />
-            
-            {/* Partners */}
             <MenuCard label="Suppliers" color="orange" icon="🚛" onClick={() => onNavigate('suppliers')} />
-            
-            {/* System */}
             <MenuCard label="Audit Logs" color="blackAlpha" icon="🛡️" onClick={() => onNavigate('audit')} />
-
           </SimpleGrid>
         </>
       )}
@@ -289,7 +220,6 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
   )
 }
 
-// 🎨 Helper Component for Menu Cards
 function MenuCard({ label, color, icon, onClick }) {
   return (
     <Box 

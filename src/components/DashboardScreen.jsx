@@ -210,6 +210,7 @@ export default function DashboardScreen({ userRole, onNavigate, onLogout }) {
             <MenuCard label="Product Stock" color="purple" icon="📦" onClick={() => onNavigate('stock')} />
             <MenuCard label="Expenses" color="red" icon="💸" onClick={() => onNavigate('expense')} />
             <MenuCard label="Analytics" color="blue" icon="📈" onClick={() => onNavigate('analytics')} />
+            <MenuCard label="Customers" color="cyan" icon="🤝" onClick={() => onNavigate('customers')} />
             <MenuCard label="Wastage" color="gray" icon="🗑️" onClick={() => onNavigate('wastage')} />
             <MenuCard label="Suppliers" color="orange" icon="🚛" onClick={() => onNavigate('suppliers')} />
             <MenuCard label="Audit Logs" color="blackAlpha" icon="🛡️" onClick={() => onNavigate('audit')} />
